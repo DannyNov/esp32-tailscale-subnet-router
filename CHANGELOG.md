@@ -6,6 +6,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.1.27] — 2026-09-16
+
+The router stops rebooting on uplink channel changes, and a tidy-up inside microlink. Device-tested before tagging: manual OTA, a forced roam of the uplink from channel 11 to channel 1 and back with the AP client watched from its own side (no reboot, client stayed associated, tunnel back within half a minute, heap flat across six roams), six peers direct, an AP client through the router.
+
 ### Fixed
 - **The router no longer reboots when its uplink changes channel.** The old "ch-realign" logic rebooted on any mismatch between the softAP's configured channel and the channel the STA had just connected on, on the assumption that a single radio would otherwise time-share and collapse throughput. Measured on the reference router with a forced roam from a channel-11 to a channel-1 uplink: the WiFi driver moves the softAP to the STA's channel by itself, the AP client stayed associated with its address, the only gap was ~5 s of uplink DHCP, and throughput was unchanged. Behind an uplink that hops channels (band steering, auto-channel) the reboot fired on every hop — 27 times in six days on one device in the telemetry — dropping every AP client and the tunnel for 30–40 s each time, for nothing. Now: the learned channel is still saved so the next boot starts aligned, a warning is logged, and `/api/status` reports the channel the radio is actually on (`ap.channel`; the boot value is `ap.cfg_channel`). Re-applying the AP config live was measured too and is not an option: the netif restart clears NAPT and the ACL hooks, so AP clients lose the internet until a reboot.
 
