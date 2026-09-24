@@ -35,6 +35,9 @@
 #endif
 #include "lwip/err.h"
 #include "lwip/sys.h"
+#include "lwip/tcpip.h"
+#include "lwip/etharp.h"
+#include "lwip/prot/ethernet.h"
 
 #include "tailscale_config.h"
 #include "tailscale_mtu.h"
@@ -283,6 +286,56 @@ static void wifi_apply_network(int idx)
     }
 }
 
+typedef struct {
+    ip4_addr_t ip;
+    struct eth_addr mac;
+    bool add;
+} reserved_arp_update_t;
+
+static void reserved_arp_update_cb(void *arg)
+{
+    reserved_arp_update_t *u = (reserved_arp_update_t *)arg;
+    if (!u) return;
+
+#if ETHARP_SUPPORT_STATIC_ENTRIES
+    err_t err = u->add
+        ? etharp_add_static_entry(&u->ip, &u->mac)
+        : etharp_remove_static_entry(&u->ip);
+
+    ESP_LOGI(TAG_AP, "%s reserved ARP " IPSTR " -> " MACSTR ": %d",
+             u->add ? "install" : "remove",
+             IP2STR(&u->ip),
+             MAC2STR(u->mac.addr),
+             (int)err);
+#else
+    ESP_LOGW(TAG_AP, "reserved ARP requested but ETHARP static entries are disabled");
+#endif
+
+    free(u);
+}
+
+static void schedule_reserved_arp(const uint8_t mac[6], bool add)
+{
+    uint32_t reserved_ip = dhcp_reservations_lookup(mac);
+    if (!reserved_ip) return;
+
+    reserved_arp_update_t *u = calloc(1, sizeof(*u));
+    if (!u) {
+        ESP_LOGE(TAG_AP, "OOM scheduling reserved ARP update");
+        return;
+    }
+
+    u->ip.addr = reserved_ip;
+    memcpy(u->mac.addr, mac, 6);
+    u->add = add;
+
+    err_t err = tcpip_callback(reserved_arp_update_cb, u);
+    if (err != ERR_OK) {
+        ESP_LOGE(TAG_AP, "tcpip_callback for reserved ARP failed: %d", (int)err);
+        free(u);
+    }
+}
+
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
@@ -290,6 +343,16 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *) event_data;
         ESP_LOGI(TAG_AP, "Station "MACSTR" joined, AID=%d",
                  MAC2STR(event->mac), event->aid);
+
+        /*
+         * A reserved low-power client may reassociate while reusing its
+         * previous IPv4 address without sending DHCP or ARP. Seed a static
+         * ARP entry from the authoritative MAC->IP reservation so routed
+         * traffic (including Tailscale -> AP) can reach it immediately.
+         * This is removed when the station leaves.
+         */
+        schedule_reserved_arp(event->mac, true);
+
         /* MAC denylist enforcement runs at associate time — the Wi-Fi
          * driver has no built-in MAC ACL on ESP-IDF, so the cheapest
          * place to drop a banned client is the next tick, before
@@ -307,6 +370,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *) event_data;
         ESP_LOGI(TAG_AP, "Station "MACSTR" left, AID=%d, reason:%d",
                  MAC2STR(event->mac), event->aid, event->reason);
+        schedule_reserved_arp(event->mac, false);
         if (connect_count > 0) connect_count--;
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
