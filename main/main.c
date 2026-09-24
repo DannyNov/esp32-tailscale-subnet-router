@@ -432,6 +432,24 @@ esp_netif_t *wifi_init_softap(void)
     free(nvs_ap_ip);
     free(nvs_ap_mask);
 
+    /*
+     * Enable DNS in DHCP offers once, before esp_wifi_start() makes the AP
+     * visible to clients. esp_netif_dhcps_option(SET) requires the server to
+     * be stopped, and the custom dhcps_stop() drops its in-memory lease list.
+     * Doing that here is harmless because no station can have a lease yet.
+     * Later DNS-address changes must NOT restart DHCP; low-power clients can
+     * keep using an old address while the server forgets it, which can lead to
+     * missing lease/IP reporting and even duplicate dynamic assignments.
+     */
+    {
+        uint8_t dhcps_offer_option = DHCPS_OFFER_DNS;
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_dhcps_stop(esp_netif_ap));
+        ESP_ERROR_CHECK(esp_netif_dhcps_option(
+            esp_netif_ap, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER,
+            &dhcps_offer_option, sizeof(dhcps_offer_option)));
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_dhcps_start(esp_netif_ap));
+    }
+
     char *nvs_ssid = nvs_param_get_str("ap_ssid");
     char *nvs_pw   = nvs_param_get_str("ap_passwd");
     const char *use_ssid = (nvs_ssid && nvs_ssid[0]) ? nvs_ssid : EXAMPLE_ESP_WIFI_AP_SSID;
@@ -609,11 +627,13 @@ void softap_set_dns_addr(esp_netif_t *esp_netif_ap,esp_netif_t *esp_netif_sta)
         dns.ip.u_addr.ip4.addr = a.addr;
     }
 
-    uint8_t dhcps_offer_option = DHCPS_OFFER_DNS;
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_dhcps_stop(esp_netif_ap));
-    ESP_ERROR_CHECK(esp_netif_dhcps_option(esp_netif_ap, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER, &dhcps_offer_option, sizeof(dhcps_offer_option)));
+    /*
+     * The DHCP offer-DNS bit is enabled once in wifi_init_softap(), before
+     * clients can associate. Updating the DNS server itself is safe while
+     * DHCP is running (esp_netif_set_dns_info writes the live DHCPS DNS
+     * slot), so do not stop/start DHCPS here: stop() clears active leases.
+     */
     ESP_ERROR_CHECK(esp_netif_set_dns_info(esp_netif_ap, ESP_NETIF_DNS_MAIN, &dns));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_dhcps_start(esp_netif_ap));
 
     if (used_override) {
         ESP_LOGI(TAG_AP, "AP DHCP-offered DNS = %u.%u.%u.%u (operator override)",
