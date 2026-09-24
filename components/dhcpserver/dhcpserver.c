@@ -1144,6 +1144,21 @@ static s16_t parse_msg(dhcps_t *dhcps, struct dhcps_msg *m, u16_t len)
                 ip4_addr3_16(&res_addr), ip4_addr4_16(&res_addr),
                 ip4_addr1_16(&old_addr), ip4_addr2_16(&old_addr),
                 ip4_addr3_16(&old_addr), ip4_addr4_16(&old_addr));
+
+            /*
+             * Low-power clients can keep their DHCP address across a short
+             * AP/DHCP-server outage and come back with a DHCPREQUEST renewal
+             * (ciaddr set, no Option 50) instead of starting with DISCOVER.
+             * dhcps_stop() clears plist, so after a DHCP restart the server
+             * otherwise forgets the lease and NAKs that valid renewal.
+             * A reservation is the authoritative MAC -> IP binding: when
+             * ciaddr exactly matches it, restore renew state so the ACK path
+             * recreates the lease entry. Mismatched addresses and
+             * non-reserved clients keep the original validation path.
+             */
+            if (memcmp(&reserved_ip, m->ciaddr, sizeof(reserved_ip)) == 0) {
+                dhcps->renew = true;
+            }
         }
 
         if (dhcps->client_address.addr > dhcps->dhcps_poll.end_ip.addr) {
