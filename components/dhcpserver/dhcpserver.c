@@ -20,6 +20,9 @@
 #include "dhcpserver/dhcpserver.h"
 #include "dhcpserver/dhcpserver_options.h"
 #include "dhcps_ext.h"
+#include "lwip/tcpip.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #if ESP_DHCPS
 
@@ -30,6 +33,12 @@ static const char *TAG = "custom_dhcps";
  * falls back to the normal pool-assigned address. This keeps the
  * dhcpserver component free of dependencies on main/. */
 static dhcps_reservation_lookup_fn s_reservation_lookup = NULL;
+static dhcps_address_policy_fn s_available, s_prepare_ack;
+void dhcps_set_address_policy(dhcps_address_policy_fn available, dhcps_address_policy_fn prepare_ack)
+{
+    s_available = available;
+    s_prepare_ack = prepare_ack;
+}
 
 void dhcps_set_reservation_lookup(dhcps_reservation_lookup_fn cb)
 {
@@ -162,6 +171,7 @@ struct dhcps_t {
     struct udp_pcb *dhcps_pcb;
     dhcps_handle_state state;
     bool has_declined_ip;
+    uint32_t declined_ip;
     char current_hostname[DHCPS_MAX_HOSTNAME_LEN];  // Temporary storage for current client's hostname
 };
 
@@ -607,19 +617,19 @@ static void dhcps_response_ip_set(dhcps_t *dhcps, struct dhcps_msg *m, ip4_addr_
         /* If the 'giaddr' field is non-zero, send return message to the address in 'giaddr'. (RFC 2131)*/
         ip4_addr_set(ip4_out, &ip4_giaddr);
         /* add the IP<->MAC as static entry into the arp table. */
-        etharp_add_static_entry(&ip4_giaddr, &chaddr);
+        tsr_etharp_add_static_entry(dhcps->dhcps_netif, &ip4_giaddr, &chaddr);
     } else {
         if (!ip4_addr_isany_val(ip4_ciaddr)) {
             /* If the 'giaddr' field is zero and the 'ciaddr' is nonzero,
              * the server unicasts DHCPOFFER and DHCPACK message to the address in 'ciaddr'*/
             ip4_addr_set(ip4_out, &ip4_ciaddr);
-            etharp_add_static_entry(&ip4_ciaddr, &chaddr);
+            tsr_etharp_add_static_entry(dhcps->dhcps_netif, &ip4_ciaddr, &chaddr);
         } else if (!BROADCAST_BIT_IS_SET(htons(m->flags))) {
             /* If the 'giaddr' is zero and 'ciaddr' is zero, and the broadcast bit is not set,
              * the server unicasts DHCPOFFER and DHCPACK message to the client's hardware address and
              * 'yiaddr' address. */
             ip4_addr_set(ip4_out, &ip4_yiaddr);
-            etharp_add_static_entry(&ip4_yiaddr, &chaddr);
+            tsr_etharp_add_static_entry(dhcps->dhcps_netif, &ip4_yiaddr, &chaddr);
         } else {
             /* The server broadcast DHCPOFFER and DHCPACK message to 0xffffffff*/
             ip4_addr_set(ip4_out, &dhcps->broadcast_dhcps);
@@ -718,7 +728,14 @@ static void send_offer(dhcps_t *dhcps, struct dhcps_msg *m, u16_t len)
 
 #if ETHARP_SUPPORT_STATIC_ENTRIES
     /* remove the IP<->MAC from the arp table. */
-    etharp_remove_static_entry(ip_2_ip4(&ip_temp));
+    tsr_etharp_remove_static_entry(dhcps->dhcps_netif, ip_2_ip4(&ip_temp));
+    uint32_t held = s_reservation_lookup ? s_reservation_lookup(m->chaddr) : 0;
+    if (held && dhcps_address_valid(held) && !dhcps_address_in_use(m->chaddr, held)) {
+        ip4_addr_t a = {.addr = held};
+        struct eth_addr mac;
+        memcpy(mac.addr, m->chaddr, 6);
+        tsr_etharp_add_static_entry(dhcps->dhcps_netif, &a, &mac);
+    }
 #endif
 
     if (p->ref != 0) {
@@ -801,7 +818,7 @@ static void send_nak(dhcps_t *dhcps, struct dhcps_msg *m, u16_t len)
     if (!ip4_addr_isany_val(ip4_giaddr)) {
         ip4_addr_set(ip_2_ip4(&ip_temp), &ip4_giaddr);
         /* add the IP<->MAC as static entry into the arp table. */
-        etharp_add_static_entry(&ip4_giaddr, &chaddr);
+        tsr_etharp_add_static_entry(dhcps->dhcps_netif, &ip4_giaddr, &chaddr);
     } else {
         /* when 'giaddr' is zero, the server broadcasts any DHCPNAK message to 0xffffffff. (RFC 2131)*/
         ip4_addr_set(ip_2_ip4(&ip_temp), &dhcps->broadcast_dhcps);
@@ -819,7 +836,14 @@ static void send_nak(dhcps_t *dhcps, struct dhcps_msg *m, u16_t len)
 
 #if ETHARP_SUPPORT_STATIC_ENTRIES
     /* remove the IP<->MAC from the arp table. */
-    etharp_remove_static_entry(ip_2_ip4(&ip_temp));
+    tsr_etharp_remove_static_entry(dhcps->dhcps_netif, ip_2_ip4(&ip_temp));
+    uint32_t held = s_reservation_lookup ? s_reservation_lookup(m->chaddr) : 0;
+    if (held && dhcps_address_valid(held) && !dhcps_address_in_use(m->chaddr, held)) {
+        ip4_addr_t a = {.addr = held};
+        struct eth_addr mac;
+        memcpy(mac.addr, m->chaddr, 6);
+        tsr_etharp_add_static_entry(dhcps->dhcps_netif, &a, &mac);
+    }
 #endif
 
     if (p->ref != 0) {
@@ -844,6 +868,8 @@ static void send_ack(dhcps_t *dhcps, struct dhcps_msg *m, u16_t len)
     u16_t cnt = 0;
     u16_t i;
     err_t SendAck_err_t;
+    /* Reserve durably before ACK. Known renewals never rewrite NVS. */
+    if (s_prepare_ack && !s_prepare_ack(m->chaddr, dhcps->client_address.addr)) return;
     create_msg(dhcps, m);
 
     end = add_msg_type(&m->options[4], DHCPACK);
@@ -899,11 +925,22 @@ static void send_ack(dhcps_t *dhcps, struct dhcps_msg *m, u16_t len)
 
 #if ETHARP_SUPPORT_STATIC_ENTRIES
     /* remove the IP<->MAC from the arp table. */
-    etharp_remove_static_entry(ip_2_ip4(&ip_temp));
+    tsr_etharp_remove_static_entry(dhcps->dhcps_netif, ip_2_ip4(&ip_temp));
+    uint32_t held = s_reservation_lookup ? s_reservation_lookup(m->chaddr) : 0;
+    if (held && dhcps_address_valid(held) && !dhcps_address_in_use(m->chaddr, held)) {
+        ip4_addr_t a = {.addr = held};
+        struct eth_addr mac;
+        memcpy(mac.addr, m->chaddr, 6);
+        tsr_etharp_add_static_entry(dhcps->dhcps_netif, &a, &mac);
+    }
 #endif
 
     if (SendAck_err_t == ERR_OK) {
-        dhcps->dhcps_cb(dhcps->dhcps_cb_arg, m->yiaddr, m->chaddr);
+        for (list_node *node = dhcps->plist; node; node = node->pnext) {
+            struct dhcps_pool *entry = node->pnode;
+            if (!memcmp(entry->mac, m->chaddr, 6)) entry->acknowledged = true;
+        }
+        if (dhcps->dhcps_cb) dhcps->dhcps_cb(dhcps->dhcps_cb_arg, m->yiaddr, m->chaddr);
     }
 
     if (p->ref != 0) {
@@ -1061,6 +1098,26 @@ static u8_t parse_options(dhcps_t *dhcps, u8_t *optptr, s16_t len)
  *                len -- DHCP message length
  * Returns      : DHCP message type
 *******************************************************************************/
+bool dhcps_address_valid(uint32_t ip)
+{
+    if (!g_dhcps_instance || !g_dhcps_instance->dhcps_netif) return false;
+    struct netif *n = g_dhcps_instance->dhcps_netif;
+    ip4_addr_t a = {.addr = ip};
+    uint32_t mask = netif_ip4_netmask(n)->addr;
+    return ip && ip != netif_ip4_addr(n)->addr && (ip & ~mask) &&
+        !ip4_addr_ismulticast(&a) && !ip4_addr_isbroadcast(&a, n) &&
+        ip4_addr_net_eq(&a, netif_ip4_addr(n), netif_ip4_netmask(n));
+}
+bool dhcps_address_in_use(const uint8_t mac[6], uint32_t ip)
+{
+    if (!g_dhcps_instance) return false;
+    for (list_node *node = g_dhcps_instance->plist; node; node = node->pnext) {
+        struct dhcps_pool *entry = node->pnode;
+        if (entry->ip.addr == ip && memcmp(entry->mac, mac, 6)) return true;
+    }
+    return false;
+}
+
 static s16_t parse_msg(dhcps_t *dhcps, struct dhcps_msg *m, u16_t len)
 {
     u32_t lease_timer = (dhcps->dhcps_lease_time * DHCPS_LEASE_UNIT)/DHCPS_COARSE_TIMER_SECS;
@@ -1069,139 +1126,49 @@ static s16_t parse_msg(dhcps_t *dhcps, struct dhcps_msg *m, u16_t len)
 #if DHCPS_DEBUG
         DHCPS_LOG("dhcps: len = %d\n", len);
 #endif
-        ip4_addr_t addr_tmp;
-
         struct dhcps_pool *pdhcps_pool = NULL;
         list_node *pnode = NULL;
-        list_node *pback_node = NULL;
-        ip4_addr_t first_address;
-        bool flag = false;
-
-        first_address.addr = dhcps->dhcps_poll.start_ip.addr;
-        dhcps->client_address.addr = dhcps->client_address_plus.addr;
         dhcps->renew = false;
-
-        if (dhcps->plist != NULL) {
-            if (dhcps->has_declined_ip) {
-                dhcps->has_declined_ip = false;
-            }
-
-            for (pback_node = dhcps->plist; pback_node != NULL; pback_node = pback_node->pnext) {
-                pdhcps_pool = pback_node->pnode;
-
-                if (memcmp(pdhcps_pool->mac, m->chaddr, sizeof(pdhcps_pool->mac)) == 0) {
-                    if (memcmp(&pdhcps_pool->ip.addr, m->ciaddr, sizeof(pdhcps_pool->ip.addr)) == 0) {
-                        dhcps->renew = true;
-                    }
-
-                    dhcps->client_address.addr = pdhcps_pool->ip.addr;
-                    pdhcps_pool->lease_timer = lease_timer;
-                    pnode = pback_node;
-                    goto POOL_CHECK;
-                } else if (pdhcps_pool->ip.addr == dhcps->client_address_plus.addr) {
-                    addr_tmp.addr = htonl(dhcps->client_address_plus.addr);
-                    addr_tmp.addr++;
-                    dhcps->client_address_plus.addr = htonl(addr_tmp.addr);
-                    dhcps->client_address.addr = dhcps->client_address_plus.addr;
-                }
-
-                if (flag == false) { // search the first unused ip
-                    if (first_address.addr < pdhcps_pool->ip.addr) {
-                        flag = true;
-                    } else {
-                        addr_tmp.addr = htonl(first_address.addr);
-                        addr_tmp.addr++;
-                        first_address.addr = htonl(addr_tmp.addr);
-                    }
-                }
-            }
-        } else {
-            if (dhcps->has_declined_ip) {
-                dhcps->has_declined_ip = false;
-            } else {
-                dhcps->client_address.addr = dhcps->dhcps_poll.start_ip.addr;
+        uint32_t reserved = s_reservation_lookup ? s_reservation_lookup(m->chaddr) : 0;
+        for (list_node *node = dhcps->plist; node; node = node->pnext) {
+            struct dhcps_pool *entry = node->pnode;
+            if (!memcmp(entry->mac, m->chaddr, 6)) {
+                pnode = node; pdhcps_pool = entry; break;
             }
         }
-
-        if (dhcps->client_address_plus.addr > dhcps->dhcps_poll.end_ip.addr) {
-            dhcps->client_address.addr = first_address.addr;
-        }
-
-        // Check for DHCP reservation for this MAC address
-        uint32_t reserved_ip = s_reservation_lookup ? s_reservation_lookup(m->chaddr) : 0;
-        if (reserved_ip != 0) {
-            ip4_addr_t res_addr, old_addr;
-            res_addr.addr = reserved_ip;
-            old_addr.addr = dhcps->client_address.addr;
-
-            // Always use the reserved IP, regardless of pool range
-            dhcps->client_address.addr = reserved_ip;
-
-            ESP_LOGI(TAG, "DHCP reservation: MAC %02X:%02X:%02X:%02X:%02X:%02X -> %d.%d.%d.%d (pool would assign %d.%d.%d.%d)",
-                m->chaddr[0], m->chaddr[1], m->chaddr[2],
-                m->chaddr[3], m->chaddr[4], m->chaddr[5],
-                ip4_addr1_16(&res_addr), ip4_addr2_16(&res_addr),
-                ip4_addr3_16(&res_addr), ip4_addr4_16(&res_addr),
-                ip4_addr1_16(&old_addr), ip4_addr2_16(&old_addr),
-                ip4_addr3_16(&old_addr), ip4_addr4_16(&old_addr));
-
-            /*
-             * Low-power clients can keep their DHCP address across a short
-             * AP/DHCP-server outage and come back with a DHCPREQUEST renewal
-             * (ciaddr set, no Option 50) instead of starting with DISCOVER.
-             * dhcps_stop() clears plist, so after a DHCP restart the server
-             * otherwise forgets the lease and NAKs that valid renewal.
-             * A reservation is the authoritative MAC -> IP binding: when
-             * ciaddr exactly matches it, restore renew state so the ACK path
-             * recreates the lease entry. Mismatched addresses and
-             * non-reserved clients keep the original validation path.
-             */
-            if (memcmp(&reserved_ip, m->ciaddr, sizeof(reserved_ip)) == 0) {
-                dhcps->renew = true;
+        /* Ownership is checked on EVERY path, including an existing RAM lease.
+         * Iterate in host byte order; exclude offline owners as well as live leases. */
+        uint32_t selected = reserved ? reserved : (pdhcps_pool ? pdhcps_pool->ip.addr : 0);
+        if (selected && ((dhcps->has_declined_ip && selected == dhcps->declined_ip) || !dhcps_address_valid(selected) ||
+            dhcps_address_in_use(m->chaddr, selected) ||
+            (s_available && !s_available(m->chaddr, selected)))) selected = 0;
+        if (!selected && !reserved) {
+            uint32_t end_ip = ntohl(dhcps->dhcps_poll.end_ip.addr);
+            for (uint32_t host = ntohl(dhcps->dhcps_poll.start_ip.addr); host <= end_ip; ++host) {
+                uint32_t candidate = htonl(host);
+                if (!(dhcps->has_declined_ip && candidate == dhcps->declined_ip) && dhcps_address_valid(candidate) && !dhcps_address_in_use(m->chaddr, candidate) &&
+                    (!s_available || s_available(m->chaddr, candidate))) { selected = candidate; break; }
+                if (host == UINT32_MAX) break;
             }
         }
-
-        if (dhcps->client_address.addr > dhcps->dhcps_poll.end_ip.addr) {
-            dhcps->client_address_plus.addr = dhcps->dhcps_poll.start_ip.addr;
-            pdhcps_pool = NULL;
-            pnode = NULL;
-        } else {
-            pdhcps_pool = (struct dhcps_pool *)mem_calloc(1, sizeof(struct dhcps_pool));
-
-            pdhcps_pool->ip.addr = dhcps->client_address.addr;
-            memcpy(pdhcps_pool->mac, m->chaddr, sizeof(pdhcps_pool->mac));
-            pdhcps_pool->lease_timer = lease_timer;
-            pnode = (list_node *)mem_calloc(1, sizeof(list_node));
-
+        if (!selected) return DHCPS_STATE_IDLE; /* conflict/exhaustion: never duplicate an IP */
+        dhcps->client_address.addr = selected;
+        dhcps->renew = !memcmp(&selected, m->ciaddr, sizeof selected);
+        if (!pnode) {
+            pdhcps_pool = mem_calloc(1, sizeof(*pdhcps_pool));
+            pnode = mem_calloc(1, sizeof(*pnode));
+            if (!pdhcps_pool || !pnode) { free(pdhcps_pool); free(pnode); return DHCPS_STATE_IDLE; }
             pnode->pnode = pdhcps_pool;
-            pnode->pnext = NULL;
+            pdhcps_pool->ip.addr = selected;
+            memcpy(pdhcps_pool->mac, m->chaddr, 6);
             node_insert_to_list(&dhcps->plist, pnode);
-
-            if (dhcps->client_address.addr == dhcps->dhcps_poll.end_ip.addr) {
-                dhcps->client_address_plus.addr = dhcps->dhcps_poll.start_ip.addr;
-            } else {
-                addr_tmp.addr = htonl(dhcps->client_address.addr);
-                addr_tmp.addr++;
-                dhcps->client_address_plus.addr = htonl(addr_tmp.addr);
-            }
+        } else if (pdhcps_pool->ip.addr != selected) {
+            node_remove_from_list(&dhcps->plist, pnode);
+            pdhcps_pool->ip.addr = selected;
+            pdhcps_pool->acknowledged = false;
+            node_insert_to_list(&dhcps->plist, pnode);
         }
-
-POOL_CHECK:
-
-        if ((dhcps->client_address.addr > dhcps->dhcps_poll.end_ip.addr) || (ip4_addr_isany(&dhcps->client_address))) {
-            if (pnode != NULL) {
-                node_remove_from_list(&dhcps->plist, pnode);
-                free(pnode);
-                pnode = NULL;
-            }
-
-            if (pdhcps_pool != NULL) {
-                free(pdhcps_pool);
-                pdhcps_pool = NULL;
-            }
-
-            return 4;
-        }
+        pdhcps_pool->lease_timer = lease_timer;
 
         s16_t ret = parse_options(dhcps, &m->options[4], len);;
 
@@ -1219,6 +1186,7 @@ POOL_CHECK:
 
             if (ret ==  DHCPS_STATE_DECLINE) {
                 dhcps->has_declined_ip = true;
+                dhcps->declined_ip = dhcps->client_address.addr;
             }
             memset(&dhcps->client_address, 0x0, sizeof(dhcps->client_address));
         } else if (pdhcps_pool != NULL) {
@@ -1726,7 +1694,7 @@ err_t __wrap_dhcps_dns_getserver(dhcps_t *dhcps, ip4_addr_t *dnsserver)
  * Parameters   : leases -- Array to store lease info
  *                max_leases -- Maximum number of leases to return
  * Returns      : Number of active leases found
- * Note         : Uses global g_dhcps_instance, safe to call from any context
+ * Note         : TCP/IP task only; other tasks use dhcps_snapshot_leases
  ******************************************************************************/
 int dhcps_get_active_leases(dhcp_lease_info_t *leases, int max_leases)
 {
@@ -1745,7 +1713,8 @@ int dhcps_get_active_leases(dhcp_lease_info_t *leases, int max_leases)
         if (pdhcps_pool != NULL) {
             memcpy(leases[count].mac, pdhcps_pool->mac, 6);
             leases[count].ip = pdhcps_pool->ip.addr;
-            leases[count].lease_timer = pdhcps_pool->lease_timer;
+            leases[count].acknowledged = pdhcps_pool->acknowledged;
+            leases[count].lease_timer = pdhcps_pool->lease_timer * DHCPS_COARSE_TIMER_SECS;
             strncpy(leases[count].hostname, pdhcps_pool->hostname, sizeof(leases[count].hostname) - 1);
             leases[count].hostname[sizeof(leases[count].hostname) - 1] = '\0';
             count++;
@@ -1755,4 +1724,20 @@ int dhcps_get_active_leases(dhcp_lease_info_t *leases, int max_leases)
     return count;
 }
 
+typedef struct { dhcp_lease_info_t *leases; int max, count; SemaphoreHandle_t done; } lease_snapshot_t;
+static void snapshot_cb(void *arg)
+{
+    lease_snapshot_t *s = arg;
+    s->count = dhcps_get_active_leases(s->leases, s->max);
+    xSemaphoreGive(s->done);
+}
+int dhcps_snapshot_leases(dhcp_lease_info_t *leases, int max)
+{
+    lease_snapshot_t s = {.leases = leases, .max = max};
+    s.done = xSemaphoreCreateBinary();
+    if (!s.done) return 0;
+    if (tcpip_callback(snapshot_cb, &s) == ERR_OK) xSemaphoreTake(s.done, portMAX_DELAY);
+    vSemaphoreDelete(s.done);
+    return s.count;
+}
 #endif // ESP_DHCPS

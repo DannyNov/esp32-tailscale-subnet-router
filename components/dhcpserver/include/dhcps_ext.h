@@ -10,6 +10,8 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
+#include "lwip/etharp.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,6 +35,14 @@ typedef uint32_t (*dhcps_reservation_lookup_fn)(const uint8_t mac[6]);
  * Callback runs on the LWIP TCP/IP task — must be lock-free + sync. */
 void dhcps_set_reservation_lookup(dhcps_reservation_lookup_fn cb);
 
+/* TCP/IP task callbacks. prepare_ack durably claims new addresses before ACK. */
+typedef bool (*dhcps_address_policy_fn)(const uint8_t mac[6], uint32_t ip);
+void dhcps_set_address_policy(dhcps_address_policy_fn available, dhcps_address_policy_fn prepare_ack);
+bool dhcps_address_valid(uint32_t ip);
+bool dhcps_address_in_use(const uint8_t mac[6], uint32_t ip);
+err_t tsr_etharp_add_static_entry(struct netif *netif, const ip4_addr_t *ip, const struct eth_addr *mac);
+err_t tsr_etharp_remove_static_entry(struct netif *netif, const ip4_addr_t *ip);
+
 /* ─────────────────── Active lease enumeration ─────────────────── */
 
 /* Snapshot of one active DHCP lease. The hostname carries the client-
@@ -40,13 +50,17 @@ void dhcps_set_reservation_lookup(dhcps_reservation_lookup_fn cb);
 typedef struct {
     uint8_t  mac[6];
     uint32_t ip;                                         /* network byte order */
+    bool acknowledged;
     uint32_t lease_timer;                                /* seconds remaining */
     char     hostname[DHCPS_EXT_MAX_HOSTNAME_LEN];
 } dhcp_lease_info_t;
 
 /* Copy up to max_leases active leases into the supplied array. Returns
  * the number written, or 0 if the server isn't running. */
+/* TCP/IP task only. Use dhcps_snapshot_leases from HTTP/other tasks. */
 int dhcps_get_active_leases(dhcp_lease_info_t *leases, int max_leases);
+
+int dhcps_snapshot_leases(dhcp_lease_info_t *leases, int max_leases);
 
 #ifdef __cplusplus
 }

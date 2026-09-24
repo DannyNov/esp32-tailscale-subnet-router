@@ -54,6 +54,8 @@
 #include "dns_relay.h"
 #include "wifi_networks.h"
 #include "dhcp_reservations.h"
+#include "dhcps_ext.h"
+#include "esp_netif_net_stack.h"
 #include "portmap.h"
 #include "mac_deny.h"
 #include "reset_history.h"
@@ -298,9 +300,14 @@ static void reserved_arp_update_cb(void *arg)
     if (!u) return;
 
 #if ETHARP_SUPPORT_STATIC_ENTRIES
+    esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    struct netif *netif = ap ? esp_netif_get_netif_impl(ap) : NULL;
+    u->ip.addr = dhcp_reservations_lookup(u->mac.addr);
+    if (!netif || !u->ip.addr || !dhcps_address_valid(u->ip.addr) ||
+        dhcps_address_in_use(u->mac.addr, u->ip.addr)) { free(u); return; }
     err_t err = u->add
-        ? etharp_add_static_entry(&u->ip, &u->mac)
-        : etharp_remove_static_entry(&u->ip);
+        ? tsr_etharp_add_static_entry(netif, &u->ip, &u->mac)
+        : tsr_etharp_remove_static_entry(netif, &u->ip);
 
     ESP_LOGI(TAG_AP, "%s reserved ARP " IPSTR " -> " MACSTR ": %d",
              u->add ? "install" : "remove",
@@ -874,6 +881,9 @@ void app_main(void)
                     NULL,
                     NULL));
 
+    /* Restore ownership before any AP association or DHCP allocation. */
+    dhcp_reservations_init();
+
     /*Initialize WiFi */
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -950,11 +960,6 @@ void app_main(void)
      * also migrates the legacy single-network NVS keys into slot 0
      * on first boot. */
     wifi_networks_init();
-
-    /* DHCP reservation table — read now so the cached lookups are
-     * ready before the AP netif starts handing out leases. The
-     * matching DHCP-server hook lives in components/dhcpserver/. */
-    dhcp_reservations_init();
 
     /* Apply POSIX timezone before SNTP runs — so the first time-of-day
      * print after the first sync renders in local time. Empty NVS value

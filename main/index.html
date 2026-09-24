@@ -1973,8 +1973,11 @@
         <div class="card-body">
           <p class="form-hint" style="margin:0 0 0.75rem 0;">
             Pin a fixed IP to a client MAC. The optional name shows up in the clients table below.
-            Reservations apply at the next DHCP renew — reboot or reconnect the client to force one.
+            A client with a known lease keeps that address when reserved, even if you enter another IP. Reconnecting a sleeping sensor does not force DHCP.
           </p>
+          <label><input type="checkbox" id="dhcp-sticky-enabled"> Auto-reserve / Sticky leases for this AP</label>
+          <p class="form-hint">Enable before adding IoT sensors. Issued addresses survive router restarts. Turning this off keeps existing bindings protected. Phones can continue using normal DHCP with this option off.</p>
+          <p class="form-hint" id="dhcp-sticky-status"></p>
           <div id="dhcp-res-list"></div>
           <div style="margin-top:0.75rem;">
             <button class="btn btn-secondary btn-md" id="dhcp-res-add-btn" type="button">+ Add reservation</button>
@@ -4767,6 +4770,8 @@
         .then(function (r) { return r.json(); })
         .then(function (d) {
           s_dhcp_res_list = (d.reservations || []).slice();
+          document.getElementById('dhcp-sticky-enabled').checked = !!d.sticky_enabled;
+          document.getElementById('dhcp-sticky-status').textContent = 'Persistent bindings: ' + d.sticky_count + '/' + d.sticky_max + '. Storage: ' + d.storage_status;
           if (typeof d.max === 'number') s_dhcp_res_max = d.max;
           renderDhcpResList();
           document.getElementById('dhcp-res-save').disabled = true;
@@ -4799,6 +4804,7 @@
       clients.forEach(function (c) {
         var name = c.name || '';
         var resBadge = c.reserved ? ' <span class="badge badge-success" style="margin-left:0.5rem;">reserved</span>' : '';
+        if (!c.reserved && c.stable) resBadge = ' <span class="badge badge-success">sticky</span>';
         var rssi = (typeof c.rssi === 'number' && c.rssi !== 0) ? (c.rssi + ' dBm') : '—';
         var canReserve = c.ip && !c.reserved;
         html += '<tr>'
@@ -4811,7 +4817,7 @@
               + (canReserve
                   ? '<button class="btn btn-secondary btn-sm dhcp-reserve-from" data-mac="' + escapeHtml(c.mac) + '" data-ip="' + escapeHtml(c.ip) + '" data-name="' + escapeHtml(c.hostname || '') + '" type="button">Reserve</button> '
                   : '')
-              + '<button class="btn btn-ghost btn-sm text-danger dhcp-kick" data-mac="' + escapeHtml(c.mac) + '" type="button" title="Force reconnect — useful after changing the reservation">Kick</button> '
+              + '<button class="btn btn-ghost btn-sm text-danger dhcp-kick" data-mac="' + escapeHtml(c.mac) + '" type="button" title="Reconnect client (does not force DHCP on sleeping devices)">Kick</button> '
               + '<button class="btn btn-ghost btn-sm text-danger dhcp-deny" data-mac="' + escapeHtml(c.mac) + '" data-name="' + escapeHtml(c.name || c.hostname || '') + '" type="button" title="Add to denylist and kick — client cannot reassociate">Deny</button>'
               + '</td>'
               + '</tr>';
@@ -4964,6 +4970,7 @@
       });
     }
 
+    document.getElementById('dhcp-sticky-enabled').addEventListener('change', function () { document.getElementById('dhcp-res-save').disabled = false; });
     document.getElementById('dhcp-res-reload')      .addEventListener('click', loadDhcpReservations);
     document.getElementById('dhcp-clients-refresh') .addEventListener('click', loadDhcpLeases);
     document.getElementById('dhcp-leases-refresh')  .addEventListener('click', loadDhcpLeases);
@@ -4996,18 +5003,18 @@
       apiFetch('/api/dhcp/reservations', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ reservations: clean })
+        body:    JSON.stringify({ reservations: clean, sticky_enabled: document.getElementById('dhcp-sticky-enabled').checked })
       }).then(function (r) {
         if (!r.ok) throw 0;
         return r.json();
       }).then(function () {
         btn.textContent = 'Save';
-        showToast('success', 'Saved', 'Reservations updated — new leases will honour them at the next renew.', 4000);
+        showToast('success', 'Saved', 'Saved. Known clients retain their current address; the reloaded table shows the effective reservations.', 4000);
         loadDhcpReservations();
         loadDhcpLeases();
       }).catch(function () {
         btn.disabled = false; btn.textContent = 'Save';
-        showToast('error', 'Save failed', 'Reservations were not stored. Check the device log.', 5000);
+        showToast('error', 'Save failed', 'Not saved. Check for duplicate MAC/IP, an address held by another client, or a storage error.', 5000);
       });
     });
 

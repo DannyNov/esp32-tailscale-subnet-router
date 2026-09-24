@@ -21,7 +21,7 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 # PROJECT_VER lands in the esp_app_desc_t struct so the running firmware
 # can report its version via the OTA APIs and the web UI's Status page.
-set(PROJECT_VER "0.1.27-tuya4")
+set(PROJECT_VER "0.1.27-tuya5")
 
 project(esp32_tsr)
 
@@ -35,3 +35,5 @@ idf_component_get_property(_i2c_master_lib esp_driver_i2c COMPONENT_LIB)
 if(_i2c_master_lib)
     target_compile_options(${_i2c_master_lib} PRIVATE -Wno-error=maybe-uninitialized)
 endif()
+
+include(components/dhcpserver/etharp_netif.cmake)

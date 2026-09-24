@@ -1829,6 +1829,12 @@ static esp_err_t dhcp_reservations_handler(httpd_req_t *req)
     }
     cJSON_AddItemToObject(root, "reservations", arr);
     cJSON_AddNumberToObject(root, "max", DHCP_RESERVATIONS_MAX);
+    bool sticky; int sticky_count; esp_err_t storage_error;
+    dhcp_sticky_status(&sticky, &sticky_count, &storage_error);
+    cJSON_AddBoolToObject(root, "sticky_enabled", sticky);
+    cJSON_AddNumberToObject(root, "sticky_count", sticky_count);
+    cJSON_AddNumberToObject(root, "sticky_max", DHCP_STICKY_MAX);
+    cJSON_AddStringToObject(root, "storage_status", esp_err_to_name(storage_error));
 
     char *body = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -1869,20 +1875,24 @@ static esp_err_t dhcp_reservations_save_handler(httpd_req_t *req)
     memset(out, 0, sizeof out);
     int n_in  = cJSON_GetArraySize(arr);
     int n_out = 0;
+    bool invalid = n_in > DHCP_RESERVATIONS_MAX;
+    cJSON *mode = cJSON_GetObjectItem(root, "sticky_enabled");
+    int sticky_enabled = cJSON_IsBool(mode) ? cJSON_IsTrue(mode) : -1;
+    if (mode && !cJSON_IsBool(mode)) invalid = true;
 
     for (int i = 0; i < n_in && n_out < DHCP_RESERVATIONS_MAX; i++) {
         cJSON *e = cJSON_GetArrayItem(arr, i);
-        if (!cJSON_IsObject(e)) continue;
+        if (!cJSON_IsObject(e)) { invalid = true; break; }
 
         cJSON *mac_j = cJSON_GetObjectItem(e, "mac");
         cJSON *ip_j  = cJSON_GetObjectItem(e, "ip");
-        if (!cJSON_IsString(mac_j) || !cJSON_IsString(ip_j)) continue;
+        if (!cJSON_IsString(mac_j) || !cJSON_IsString(ip_j)) { invalid = true; break; }
 
         dhcp_reservation_t *r = &out[n_out];
-        if (!parse_mac_str(mac_j->valuestring, r->mac)) continue;
+        if (!parse_mac_str(mac_j->valuestring, r->mac)) { invalid = true; break; }
 
         ip4_addr_t a;
-        if (!ip4addr_aton(ip_j->valuestring, &a) || a.addr == 0) continue;
+        if (!ip4addr_aton(ip_j->valuestring, &a) || a.addr == 0) { invalid = true; break; }
         r->ip = a.addr;
 
         cJSON *name_j = cJSON_GetObjectItem(e, "name");
@@ -1894,14 +1904,15 @@ static esp_err_t dhcp_reservations_save_handler(httpd_req_t *req)
     }
     cJSON_Delete(root);
 
-    esp_err_t err = dhcp_reservations_set_all(out, n_out);
-
-    /* Reservations apply on the next DHCP REQUEST — the table is hot-
-     * reloaded into the lookup cache, so no reboot is required. Clients
-     * already holding a non-matching lease keep it until expiry. */
-    nvs_save_errors_reset();
-    if (err != ESP_OK) nvs_save_record_err("dhcp_res", err);
-    return send_save_response(req);
+    esp_err_t err = invalid ? ESP_ERR_INVALID_ARG :
+        dhcp_reservations_save(out, n_out, sticky_enabled);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, err == ESP_ERR_INVALID_ARG ? HTTPD_400_BAD_REQUEST : HTTPD_500_INTERNAL_SERVER_ERROR,
+            err == ESP_ERR_INVALID_ARG ? "Invalid/conflicting reservation; no changes saved" : "Binding storage unavailable; no changes saved");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"ok\":true}");
 }
 
 static const httpd_uri_t uri_dhcp_reservations = {
@@ -1935,7 +1946,7 @@ static esp_err_t dhcp_leases_handler(httpd_req_t *req)
 
     /* Pull both views first so we can cross-reference them in one pass. */
     dhcp_lease_info_t leases[DHCP_LEASES_MAX_REPORT];
-    int lease_count = dhcps_get_active_leases(leases, DHCP_LEASES_MAX_REPORT);
+    int lease_count = dhcps_snapshot_leases(leases, DHCP_LEASES_MAX_REPORT);
 
     wifi_sta_list_t sta_list;
     memset(&sta_list, 0, sizeof sta_list);
@@ -1998,8 +2009,13 @@ static esp_err_t dhcp_leases_handler(httpd_req_t *req)
             }
         }
 
-        const char *res_name = dhcp_reservations_lookup_name_by_mac(sta->mac);
-        bool reserved        = dhcp_reservations_lookup(sta->mac) != 0;
+        if (!ip_nbo) {
+            ip_nbo = dhcp_reservations_lookup(sta->mac);
+            if (ip_nbo) ip_source = "persistent";
+        }
+        char res_name[DHCP_RESERVATION_NAME_LEN];
+        dhcp_reservations_name(sta->mac, res_name);
+        bool reserved = dhcp_reservations_is_manual(sta->mac);
 
         cJSON *e = cJSON_CreateObject();
         cJSON_AddStringToObject(e, "mac", mac_str);
@@ -2013,9 +2029,10 @@ static esp_err_t dhcp_leases_handler(httpd_req_t *req)
         }
         cJSON_AddStringToObject(e, "hostname", hostname);
         cJSON_AddStringToObject(e, "ip_source", ip_source);
-        cJSON_AddStringToObject(e, "name",     res_name ? res_name : "");
+        cJSON_AddStringToObject(e, "name",     res_name);
         cJSON_AddNumberToObject(e, "rssi",     sta->rssi);
         cJSON_AddBoolToObject  (e, "reserved", reserved);
+        cJSON_AddBoolToObject(e, "stable", dhcp_reservations_lookup(sta->mac) != 0);
         cJSON_AddItemToArray(clients_arr, e);
     }
 
