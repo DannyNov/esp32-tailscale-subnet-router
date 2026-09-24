@@ -8,6 +8,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
+#include "esp_wifi_ap_get_sta_list.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -1940,6 +1941,17 @@ static esp_err_t dhcp_leases_handler(httpd_req_t *req)
     memset(&sta_list, 0, sizeof sta_list);
     esp_wifi_ap_get_sta_list(&sta_list);
 
+    /*
+     * ESP-IDF can resolve AP stations independently of our DHCP lease table:
+     * it checks DHCPS first and then falls back to the lwIP ARP cache. This is
+     * important for low-power clients which reassociate while reusing a
+     * previously configured IPv4 address and therefore send no new DHCP
+     * exchange at all.
+     */
+    wifi_sta_mac_ip_list_t sta_ip_list;
+    memset(&sta_ip_list, 0, sizeof sta_ip_list);
+    esp_err_t sta_ip_err = esp_wifi_ap_get_sta_list_with_ip(&sta_list, &sta_ip_list);
+
     cJSON *root         = cJSON_CreateObject();
     cJSON *clients_arr  = cJSON_CreateArray();
     cJSON *leases_arr   = cJSON_CreateArray();
@@ -1959,11 +1971,30 @@ static esp_err_t dhcp_leases_handler(httpd_req_t *req)
 
         const char *hostname = "";
         uint32_t    ip_nbo   = 0;
+        const char *ip_source = "";
         for (int j = 0; j < lease_count; j++) {
             if (memcmp(leases[j].mac, sta->mac, 6) == 0) {
                 hostname = leases[j].hostname;
                 ip_nbo   = leases[j].ip;
+                ip_source = "dhcp";
                 break;
+            }
+        }
+
+        /*
+         * No active DHCP lease? Fall back to IDF's station-IP view, which can
+         * recover the address from ARP. Keep DHCP authoritative when both are
+         * present so lease/hostname reporting stays unchanged for normal
+         * clients.
+         */
+        if (!ip_nbo && sta_ip_err == ESP_OK) {
+            for (int j = 0; j < sta_ip_list.num; j++) {
+                if (memcmp(sta_ip_list.sta[j].mac, sta->mac, 6) == 0 &&
+                    sta_ip_list.sta[j].ip.addr != 0) {
+                    ip_nbo = sta_ip_list.sta[j].ip.addr;
+                    ip_source = "arp";
+                    break;
+                }
             }
         }
 
@@ -1981,6 +2012,7 @@ static esp_err_t dhcp_leases_handler(httpd_req_t *req)
             cJSON_AddStringToObject(e, "ip", "");
         }
         cJSON_AddStringToObject(e, "hostname", hostname);
+        cJSON_AddStringToObject(e, "ip_source", ip_source);
         cJSON_AddStringToObject(e, "name",     res_name ? res_name : "");
         cJSON_AddNumberToObject(e, "rssi",     sta->rssi);
         cJSON_AddBoolToObject  (e, "reserved", reserved);
