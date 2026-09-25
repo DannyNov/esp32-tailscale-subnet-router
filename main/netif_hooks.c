@@ -19,6 +19,7 @@
 
 #include "acl.h"
 #include "netif_hooks.h"
+#include "ap_passive.h"
 
 /* MTU-management knobs published by tailscale_mtu.c. ap_mss_clamp is
  * the cap we enforce on every TCP SYN crossing the AP interface (so
@@ -249,6 +250,7 @@ static err_t ap_input_hook(struct pbuf *p, struct netif *netif)
 {
     if (p) s_ap_bytes_in += p->tot_len;
     if (acl_drops(acl_check_and_tap(ACL_TO_AP, p, true))) { pbuf_free(p); return ERR_OK; }
+    ap_passive_observe(p, netif);
     /* PMTU: tell the client to back off when it sends a DF packet
      * bigger than the tunnel can carry. Runs BEFORE we forward so the
      * client gets the signal even when we'd otherwise drop the frame. */

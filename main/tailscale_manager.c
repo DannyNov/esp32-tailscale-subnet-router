@@ -1,3 +1,4 @@
+#include "boot_timing.h"
 /* Tailscale (microlink) manager — settings load and lifecycle.
  *
  * Phase 1.5b: connect path drives the public microlink_config_t with
@@ -311,7 +312,9 @@ static esp_err_t tailscale_connect_locked(void)
         .preferred_derp_region = (uint16_t)tailscale_default_derp_region,
     };
 
+    BOOT_MARK("Tailscale microlink_init begin");
     s_microlink = microlink_init(&cfg);
+    BOOT_MARK("Tailscale microlink_init returned");
     if (!s_microlink) {
         ESP_LOGE(TAG, "microlink_init failed");
         return ESP_FAIL;
@@ -321,7 +324,9 @@ static esp_err_t tailscale_connect_locked(void)
      * task states + DERP heartbeat age — the wedge-catching signals. */
     sdlog_set_microlink(s_microlink);
 
+    BOOT_MARK("Tailscale start begin");
     esp_err_t err = microlink_start(s_microlink);
+    BOOT_MARK("Tailscale start returned (not necessarily online)");
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "microlink_start failed: %s", esp_err_to_name(err));
         sdlog_set_microlink(NULL);   /* handle was set above; unset before free */
@@ -398,6 +403,7 @@ void tailscale_connect_task(void *pvParameters)
         return;
     }
 
+    BOOT_MARK("Tailscale connect task / SNTP begin");
     init_sntp_if_needed();
 
     /* Microlink's Noise handshake is timestamped; we need real wall-clock

@@ -20,6 +20,7 @@
 #include "dhcpserver/dhcpserver.h"
 #include "dhcpserver/dhcpserver_options.h"
 #include "dhcps_ext.h"
+#include "esp_timer.h"
 #include "lwip/tcpip.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -1457,6 +1458,7 @@ err_t __wrap_dhcps_start(dhcps_t *dhcps, struct netif *netif, ip4_addr_t ip)
 #endif
     dhcps->state = DHCPS_HANDLE_STARTED;
     g_dhcps_instance = dhcps;  // Store for external access
+    ESP_LOGW("boot_timing", "ms=%lld DHCP ready", (long long)(esp_timer_get_time() / 1000));
     sys_timeout(DHCP_COARSE_TIMER_MSECS, dhcps_tmr, dhcps);
     return ERR_OK;
 }

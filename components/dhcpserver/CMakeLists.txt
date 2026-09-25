@@ -14,6 +14,7 @@ idf_component_register(
     SRCS "dhcpserver.c"
     INCLUDE_DIRS "include"
     REQUIRES lwip
+    PRIV_REQUIRES esp_timer
 )
 
 # Same warning suppressions as the upstream lwip component carries.

@@ -11,3 +11,5 @@ void dhcp_reservations_name(const uint8_t mac[6], char out[DHCP_RESERVATION_NAME
 /* enabled = -1 preserves mode; 0/1 changes it in the same atomic record. */
 esp_err_t dhcp_reservations_save(const dhcp_reservation_t *arr, int count, int enabled);
 void dhcp_sticky_status(bool *enabled, int *count, esp_err_t *error);
+/* TCP/IP task only. Caller verifies association and AP frame provenance. */
+bool dhcp_reservations_observe(const uint8_t mac[6], uint32_t ip, bool associated);

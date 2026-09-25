@@ -6,6 +6,7 @@
 #include "nvs_params.h"
 #include "dhcps_ext.h"
 #include "dhcp_reservations.h"
+#include "boot_timing.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "lwip/tcpip.h"
@@ -19,6 +20,7 @@ static esp_err_t s_error;
 
 static esp_err_t commit(dhcp_bindings_t *next)
 {
+    BOOT_MARK("bindings NVS commit begin");
     binding_seal(next);
     nvs_handle_t nvs;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
@@ -32,6 +34,7 @@ static esp_err_t commit(dhcp_bindings_t *next)
     if (err == ESP_OK) s_state = *next;
     UNLOCK();
     if (err != ESP_OK) ESP_LOGE(TAG, "binding not committed; ACK/settings refused: %s", esp_err_to_name(err));
+    BOOT_MARK("bindings NVS commit end");
     return err;
 }
 static bool address_available(const uint8_t mac[6], uint32_t ip)
@@ -57,6 +60,21 @@ static bool prepare_ack(const uint8_t mac[6], uint32_t ip)
     free(next);
     return ok;
 }
+bool dhcp_reservations_observe(const uint8_t mac[6], uint32_t ip, bool associated)
+{
+    if (!s_mutex || !associated || !binding_mac_valid(mac) ||
+        !dhcps_address_valid(ip) || dhcps_address_in_use(mac, ip)) return false;
+    LOCK();
+    uint32_t known = binding_lookup(&s_state, mac);
+    bool ok = s_healthy && !binding_owned_by_other(&s_state, mac, ip) &&
+              (!known || known == ip);
+    bool enabled = s_state.enabled;
+    UNLOCK();
+    if (!ok) return false;
+    if (known == ip) return true; /* restore ARP, no flash write (also when OFF) */
+    if (!enabled) return false;
+    return prepare_ack(mac, ip); /* same atomic NVS record and owner policy as DHCP */
+}
 void dhcp_reservations_init(void)
 {
     if (s_mutex) return;
@@ -70,6 +88,7 @@ void dhcp_reservations_init(void)
         size_t size = sizeof s_state;
         err = nvs_get_blob(nvs, "dhcp_bind_v1", &s_state, &size);
         if (err == ESP_ERR_NVS_NOT_FOUND) {
+            BOOT_MARK("bindings legacy migration (RAM, persisted on next mutation)");
             memset(&s_state, 0, sizeof s_state);
             size = sizeof s_state.manual;
             err = nvs_get_blob(nvs, "dhcp_res", s_state.manual, &size);
@@ -87,6 +106,7 @@ void dhcp_reservations_init(void)
     }
     dhcps_set_reservation_lookup(dhcp_reservations_lookup);
     dhcps_set_address_policy(address_available, prepare_ack);
+    BOOT_MARK(s_healthy ? "sticky bindings loaded / validated" : "sticky bindings load FAILED");
 }
 uint32_t dhcp_reservations_lookup(const uint8_t mac[6])
 {

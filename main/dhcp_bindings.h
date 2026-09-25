@@ -27,3 +27,6 @@ bool binding_remember(dhcp_bindings_t *s, const uint8_t mac[6], uint32_t ip);
 bool binding_replace_manual(dhcp_bindings_t *s, const dhcp_reservation_t *r, int count);
 void binding_seal(dhcp_bindings_t *s);
 bool binding_valid(const dhcp_bindings_t *s);
+/* Parse a copied Ethernet + IPv4 header; frame_size includes all pbuf segments. */
+bool binding_parse_ipv4(const uint8_t *header, size_t copied, size_t frame_size,
+                        uint8_t mac[6], uint32_t *ip);

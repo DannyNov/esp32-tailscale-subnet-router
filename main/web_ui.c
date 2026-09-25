@@ -1,3 +1,4 @@
+#include "boot_timing.h"
 /* Single-page web UI server.
  *
  * SPDX-License-Identifier: MIT
@@ -78,6 +79,8 @@ extern const size_t index_html_gz_len;
 
 static esp_err_t index_handler(httpd_req_t *req)
 {
+    static bool first = true;
+    if (first) { BOOT_MARK("first HTTP GET /"); first = false; }
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
     /* Without this the browser happily reuses last session's SPA HTML
@@ -4605,7 +4608,9 @@ void web_ui_init(void)
     /* Pick up the operator-configured session idle timeout before we
      * start handing out cookies, so the very first login uses the
      * persisted Max-Age instead of the compile-time default. */
+    BOOT_MARK("web auth settings begin");
     session_timeout_load();
+    BOOT_MARK("web auth settings ready");
 
     /* HTTPS→HTTP swap (2026-05-24): the self-signed esp_https_server
      * + mbedTLS combo cost ~20 KB heap per active TLS session and was
@@ -4632,10 +4637,12 @@ void web_ui_init(void)
     conf.lru_purge_enable         = true;
     conf.server_port              = 80;
 
+    BOOT_MARK("httpd_start begin");
     if (httpd_start(&server, &conf) != ESP_OK) {
         ESP_LOGE(TAG, "httpd_start failed");
         return;
     }
+    BOOT_MARK("HTTP server started on :80");
     httpd_register_uri_handler(server, &uri_index);
     httpd_register_uri_handler(server, &uri_status);
     httpd_register_uri_handler(server, &uri_network);
@@ -4692,6 +4699,7 @@ void web_ui_init(void)
     httpd_register_uri_handler(server, &uri_sdlog_download);
     httpd_register_uri_handler(server, &uri_sdlog_tail);
     httpd_register_uri_handler(server, &uri_sdlog_erase);
+    BOOT_MARK("Web UI listening (handlers registered)");
     ESP_LOGI(TAG, "web UI listening on :%d (HTTP)", conf.server_port);
     /* HTTPS redirect server gone with HTTPS itself — direct HTTP-on-80
      * is now the only listener, so nothing to redirect anywhere. */

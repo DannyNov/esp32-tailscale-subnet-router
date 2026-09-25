@@ -36,12 +36,12 @@ jobs:
       - name: Collect OTA firmware
         run: |
           mkdir -p artifacts
-          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.27-tuya5-esp32-s3-ota.bin
-          sha256sum artifacts/firmware-0.1.27-tuya5-esp32-s3-ota.bin > artifacts/SHA256SUMS.txt
+          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.27-tuya6-esp32-s3-ota.bin
+          sha256sum artifacts/firmware-0.1.27-tuya6-esp32-s3-ota.bin > artifacts/SHA256SUMS.txt
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
-          name: esp32-s3-0.1.27-tuya5-ota
+          name: esp32-s3-0.1.27-tuya6-ota
           path: artifacts/
           if-no-files-found: error
