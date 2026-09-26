@@ -67,7 +67,7 @@ bool binding_replace_manual(dhcp_bindings_t *s, const dhcp_reservation_t *r, int
         next[i].valid = 1;
         next[i].name[DHCP_RESERVATION_NAME_LEN - 1] = 0;
         /* Reserve the address the device actually holds, never the typed replacement. */
-        uint32_t held = binding_sticky(s, r[i].mac);
+        uint32_t held = binding_lookup(s, r[i].mac);
         if (held) next[i].ip = held;
         for (int j = 0; j < i; ++j)
             if (next[j].ip == next[i].ip || !memcmp(next[j].mac, next[i].mac, 6)) return false;

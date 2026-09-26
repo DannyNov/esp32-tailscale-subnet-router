@@ -1194,6 +1194,7 @@ static s16_t parse_msg(dhcps_t *dhcps, struct dhcps_msg *m, u16_t len)
             // Copy hostname from parse_options to the lease entry
             strncpy(pdhcps_pool->hostname, dhcps->current_hostname, DHCPS_MAX_HOSTNAME_LEN - 1);
             pdhcps_pool->hostname[DHCPS_MAX_HOSTNAME_LEN - 1] = '\0';
+            pdhcps_pool->forcerenew = dhcp_forcerenew_capability(&m->options[4], len);
         }
 
 #if DHCPS_DEBUG
@@ -1716,6 +1717,7 @@ int dhcps_get_active_leases(dhcp_lease_info_t *leases, int max_leases)
             memcpy(leases[count].mac, pdhcps_pool->mac, 6);
             leases[count].ip = pdhcps_pool->ip.addr;
             leases[count].acknowledged = pdhcps_pool->acknowledged;
+            leases[count].forcerenew = pdhcps_pool->forcerenew;
             leases[count].lease_timer = pdhcps_pool->lease_timer * DHCPS_COARSE_TIMER_SECS;
             strncpy(leases[count].hostname, pdhcps_pool->hostname, sizeof(leases[count].hostname) - 1);
             leases[count].hostname[sizeof(leases[count].hostname) - 1] = '\0';

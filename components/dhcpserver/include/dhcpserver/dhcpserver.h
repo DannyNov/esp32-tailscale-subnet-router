@@ -77,8 +77,10 @@ typedef enum
 
 #define DHCPS_MAX_HOSTNAME_LEN 32
 
+#include "dhcp_diagnostics.h"
 struct dhcps_pool{
     bool acknowledged;
+    dhcp_forcerenew_t forcerenew;
 	ip4_addr_t ip;
 	u8_t mac[6];
 	u32_t lease_timer;

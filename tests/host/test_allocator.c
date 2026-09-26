@@ -35,7 +35,7 @@ static uint32_t swap32(uint32_t x) { return (x<<24)|((x&0xff00)<<8)|((x>>8)&0xff
 #define mem_calloc calloc
 struct dhcps_state { int state; };
 struct dhcps_msg { uint8_t options[312], chaddr[16], ciaddr[4]; };
-struct dhcps_pool { bool acknowledged; ip4_addr_t ip;uint8_t mac[6];uint32_t lease_timer;char hostname[32]; };
+struct dhcps_pool { bool acknowledged;dhcp_forcerenew_t forcerenew; ip4_addr_t ip;uint8_t mac[6];uint32_t lease_timer;char hostname[32]; };
 typedef struct list_node { struct dhcps_pool *pnode;struct list_node *pnext; } list_node;
 struct netif { ip4_addr_t ip, mask; };
 #define netif_ip4_addr(n) (&(n)->ip)
@@ -67,6 +67,12 @@ int main(void) {
     dhcps_t s={.dhcps_netif=&ap,.dhcps_lease_time=120,.dhcps_poll={{IP(2)},{IP(10)}}};g_dhcps_instance=&s;
     assert(packet(&s,a,DHCPDISCOVER,0,0)==DHCPS_STATE_OFFER);assert(s.client_address.addr==IP(2));
     assert(packet(&s,a,DHCPREQUEST,IP(2),0)==DHCPS_STATE_ACK);
+    assert(s.plist->pnode->forcerenew==DHCP_FORCERENEW_NOT_ADVERTISED);
+    struct dhcps_msg diagnostic={0};memcpy(diagnostic.chaddr,a,6);memcpy(diagnostic.options,&magic_cookie,4);
+    const uint8_t options[]={53,1,DHCPREQUEST,145,1,1,255};
+    memcpy(diagnostic.options+4,options,sizeof options);uint32_t current=IP(2);memcpy(diagnostic.ciaddr,&current,4);
+    assert(parse_msg(&s,&diagnostic,sizeof options)==DHCPS_STATE_ACK);
+    assert(s.plist->pnode->forcerenew==DHCP_FORCERENEW_SUPPORTED);
     clear_leases(&s);memset(&owners,0,sizeof owners);
     dhcp_reservation_t r={.ip=IP(2),.valid=1};memcpy(r.mac,a,6);assert(binding_replace_manual(&owners,&r,1));
     assert(packet(&s,b,DHCPDISCOVER,0,0)==DHCPS_STATE_OFFER);assert(s.client_address.addr==IP(3));

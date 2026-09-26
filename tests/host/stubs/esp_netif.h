@@ -10,4 +10,5 @@ typedef struct { struct netif *impl; } esp_netif_t;
 esp_netif_t *esp_netif_get_handle_from_ifkey(const char *);
 void *esp_netif_get_netif_impl(esp_netif_t *);
 err_t tsr_etharp_add_static_entry(struct netif *, const ip4_addr_t *, const struct eth_addr *);
+err_t tsr_etharp_remove_static_entry(struct netif *, const ip4_addr_t *);
 int etharp_find_addr(struct netif *, const ip4_addr_t *, struct eth_addr **, const ip4_addr_t **);

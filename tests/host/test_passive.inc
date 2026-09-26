@@ -24,10 +24,16 @@ int etharp_find_addr(struct netif *n,const ip4_addr_t *ip,struct eth_addr **mac,
     assert(n==&ap_netif);(void)ip;(void)out;*mac=&owner;return arp_conflict?0:-1;
 }
 err_t tsr_etharp_add_static_entry(struct netif *n,const ip4_addr_t *ip,const struct eth_addr *mac) {
-    assert(n==&ap_netif);assert(present); /* commit precedes ARP */
-    dhcp_bindings_t persisted;memcpy(&persisted,disk,sizeof persisted);
-    assert(binding_lookup(&persisted,mac->addr)==ip->addr);
+    assert(n==&ap_netif);
+    assert(dhcp_clients_lookup(mac->addr)==ip->addr); /* validated before ARP */
+    if (dhcp_reservations_lookup(mac->addr)) {
+        assert(present);dhcp_bindings_t persisted;memcpy(&persisted,disk,sizeof persisted);
+        assert(binding_lookup(&persisted,mac->addr)==ip->addr);
+    }
     ++arp_calls;return ERR_OK;
+}
+err_t tsr_etharp_remove_static_entry(struct netif *n,const ip4_addr_t *ip) {
+    assert(n==&ap_netif);(void)ip;return ERR_OK;
 }
 uint16_t pbuf_copy_partial(const struct pbuf *p,void *out,uint16_t len,uint16_t offset) {
     assert(!offset);uint16_t copied=0;
@@ -44,7 +50,7 @@ static void drain(void) {
 static void passive_reset(void) {
     fresh();memset(s_pending,0,sizeof s_pending);memset(&associated_stations,0,sizeof associated_stations);
     associated_stations.num=1;memcpy(associated_stations.sta[0].mac,a,6);
-    queued=arp_calls=0;queue_fail=deny_mac=arp_conflict=false;clock_us=0;
+    queued=arp_calls=0;queue_fail=deny_mac=arp_conflict=false;clock_us=0;ap_passive_init();
 }
 static void make_frame(uint8_t h[74],const uint8_t mac[6],uint32_t ip,unsigned ihl) {
     memset(h,0,74);memcpy(h+6,mac,6);h[12]=8;h[14]=(uint8_t)(0x40+ihl/4);
@@ -61,10 +67,17 @@ static void feed(const uint8_t mac[6],uint32_t ip,struct netif *netif) {
 }
 static void observe(uint32_t ip) { clock_us+=1000000;feed(a,ip,&ap_netif);drain(); }
 static void test_passive(void) {
-    passive_reset();observe(IP(4));assert(!writes&&!dhcp_reservations_lookup(a)&&!arp_calls); /* OFF */
+    passive_reset();observe(IP(4));assert(!writes&&!dhcp_reservations_lookup(a)&&arp_calls==1);
+    assert(dhcp_clients_lookup(a)==IP(4)); /* OFF discovers in RAM */
+    const char *src;bool conflict;
+    assert(dhcp_client_resolve(a,0,0,&src,&conflict)==IP(4)&&!strcmp(src,"observed")&&!conflict);
+    reboot();assert(!dhcp_clients_lookup(a)); /* RAM does not survive reboot */
+    passive_reset();
     assert(dhcp_reservations_save(NULL,0,1)==ESP_OK);unsigned w=writes;
+    feed(a,IP(4),&ap_netif);assert(queued==1);drain();
+    assert(writes==w+1);w=writes-1;arp_calls=0;
     feed(a,IP(4),&ap_netif);assert(!queued); /* bounded retries */
-    clock_us+=1000000;feed(a,IP(4),&ap_netif);assert(queued==1&&writes==w);
+    clock_us+=1000000;feed(a,IP(4),&ap_netif);assert(queued==1&&writes==w+1);
     for(int i=0;i<1000;++i)feed(a,IP(4),&ap_netif);
     assert(queued==1);drain();assert(writes==w+1&&arp_calls==1&&dhcp_reservations_lookup(a)==IP(4));
     observe(IP(4));assert(writes==w+1&&arp_calls==2); /* duplicate restores ARP, never flash */
@@ -94,12 +107,12 @@ static void test_passive(void) {
 
     passive_reset();assert(dhcp_reservations_save(NULL,0,1)==ESP_OK);w=writes;
     queue_fail=true;observe(IP(4));assert(writes==w&&!arp_calls);queue_fail=false;
-    fail_write=true;observe(IP(4));assert(!dhcp_reservations_lookup(a)&&!arp_calls);fail_write=false;
-    fail_commit=true;observe(IP(4));assert(!dhcp_reservations_lookup(a)&&!arp_calls);fail_commit=false;
-    reboot();assert(!dhcp_reservations_lookup(a));observe(IP(4));assert(arp_calls==1);
+    fail_write=true;observe(IP(4));assert(!dhcp_reservations_lookup(a)&&dhcp_clients_lookup(a)==IP(4)&&arp_calls==1);fail_write=false;
+    fail_commit=true;observe(IP(4));assert(!dhcp_reservations_lookup(a)&&dhcp_clients_lookup(a)==IP(4)&&arp_calls==2);fail_commit=false;
+    reboot();assert(!dhcp_reservations_lookup(a));observe(IP(4));assert(arp_calls==3);
     /* Configuration/conflict rechecked after enqueue, before commit. */
     passive_reset();assert(dhcp_reservations_save(NULL,0,1)==ESP_OK);feed(a,IP(4),&ap_netif);
-    assert(dhcp_reservations_save(NULL,0,0)==ESP_OK);w=writes;drain();assert(writes==w&&!arp_calls);
+    assert(dhcp_reservations_save(NULL,0,0)==ESP_OK);w=writes;drain();assert(writes==w&&arp_calls==1&&!dhcp_reservations_lookup(a));
     passive_reset();assert(dhcp_reservations_save(NULL,0,1)==ESP_OK);feed(a,IP(4),&ap_netif);
     assert(ack_cb(b,IP(4)));w=writes;drain();assert(writes==w&&!arp_calls);
 
@@ -118,5 +131,5 @@ static void test_passive(void) {
     passive_reset();
     for(int i=0;i<17;++i) { uint8_t m[6]={2,0,0,0,0,(uint8_t)i};feed(m,IP(4),&ap_netif); }
     assert(queued==16);drain();assert(!writes&&!arp_calls);
-    puts("PASS: passive frame learning, provenance, association, conflicts, NVS order/failures, OFF, reboot, bounded handoff");
+    puts("PASS: passive frame learning, provenance, association, conflicts, transient/persistent NVS order/failures, OFF, reboot, bounded handoff");
 }

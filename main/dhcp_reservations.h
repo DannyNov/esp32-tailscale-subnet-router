@@ -13,3 +13,21 @@ esp_err_t dhcp_reservations_save(const dhcp_reservation_t *arr, int count, int e
 void dhcp_sticky_status(bool *enabled, int *count, esp_err_t *error);
 /* TCP/IP task only. Caller verifies association and AP frame provenance. */
 bool dhcp_reservations_observe(const uint8_t mac[6], uint32_t ip, bool associated);
+
+#define DHCP_OBSERVATIONS_MAX 16
+#define DHCP_REMEMBERED_MAX (DHCP_STICKY_MAX + DHCP_RESERVATIONS_MAX)
+typedef struct { uint8_t mac[6]; uint32_t ip; bool conflict; } dhcp_observation_t;
+typedef struct {
+    uint8_t mac[6]; uint32_t ip;
+    char name[DHCP_RESERVATION_NAME_LEN];
+    bool manual;
+} dhcp_remembered_t;
+/* RAM only. Mutations/pruning on TCP/IP; all snapshots use the state mutex. */
+bool dhcp_observation_get(int i, dhcp_observation_t *out);
+uint32_t dhcp_observation_forget(const uint8_t mac[6]);
+uint32_t dhcp_clients_lookup(const uint8_t mac[6]);
+uint32_t dhcp_client_resolve(const uint8_t mac[6], uint32_t dhcp_ip, uint32_t arp_ip,
+                             const char **source, bool *conflict);
+/* Persistent rows only, one per MAC, independent of all runtime network state. */
+int dhcp_remembered_snapshot(dhcp_remembered_t *out, int max);
+void dhcp_observations_set_refresh(void (*refresh)(void));

@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
+#include "dhcp_diagnostics.h"
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -51,6 +52,7 @@ typedef struct {
     uint8_t  mac[6];
     uint32_t ip;                                         /* network byte order */
     bool acknowledged;
+    dhcp_forcerenew_t forcerenew;
     uint32_t lease_timer;                                /* seconds remaining */
     char     hostname[DHCPS_EXT_MAX_HOSTNAME_LEN];
 } dhcp_lease_info_t;

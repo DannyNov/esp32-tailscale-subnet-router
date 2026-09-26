@@ -46,8 +46,10 @@ static void reboot(void) { vSemaphoreDelete(s_mutex);s_mutex=NULL;s_healthy=fals
 static void fresh(void) { present=have_legacy=fail_write=fail_commit=false;writes=0;memset(legacy,0,sizeof legacy);reboot(); }
 static dhcp_reservation_t reservation(const uint8_t mac[6],uint32_t ip) { dhcp_reservation_t r={.ip=ip,.valid=1};memcpy(r.mac,mac,6);return r; }
 #include "test_passive.inc"
+#include "test_remembered.inc"
 int main(void) {
     test_passive();
+    test_remembered();
     fresh();assert(s_healthy);assert(!s_state.enabled);
     assert(ack_cb(a,IP(4)));assert(writes==0); /* ordinary DHCP unchanged */
     assert(dhcp_reservations_save(NULL,0,1)==ESP_OK);

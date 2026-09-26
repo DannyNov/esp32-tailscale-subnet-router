@@ -12,9 +12,12 @@
 #include "lwip/tcpip.h"
 static const char *TAG = "dhcp_bindings";
 static dhcp_bindings_t s_state;
+static dhcp_observation_t s_observed[DHCP_OBSERVATIONS_MAX];
 static SemaphoreHandle_t s_mutex;
 static bool s_healthy;
 static esp_err_t s_error;
+static void (*s_refresh_observations)(void);
+void dhcp_observations_set_refresh(void (*refresh)(void)) { s_refresh_observations = refresh; }
 #define LOCK() xSemaphoreTake(s_mutex, portMAX_DELAY)
 #define UNLOCK() xSemaphoreGive(s_mutex)
 
@@ -37,15 +40,103 @@ static esp_err_t commit(dhcp_bindings_t *next)
     BOOT_MARK("bindings NVS commit end");
     return err;
 }
+/* Called with s_mutex held. Transient claims last only for this association. */
+static dhcp_observation_t *observation(const uint8_t mac[6], bool create)
+{
+    dhcp_observation_t *empty = NULL;
+    for (int i = 0; i < DHCP_OBSERVATIONS_MAX; ++i) {
+        if (!memcmp(s_observed[i].mac, mac, 6)) return &s_observed[i];
+        if (!binding_mac_valid(s_observed[i].mac) && !empty) empty = &s_observed[i];
+    }
+    if (create && empty) memcpy(empty->mac, mac, 6);
+    return create ? empty : NULL;
+}
+static bool observed_other(const uint8_t mac[6], uint32_t ip)
+{
+    for (int i = 0; i < DHCP_OBSERVATIONS_MAX; ++i)
+        if (ip && s_observed[i].ip == ip && memcmp(s_observed[i].mac, mac, 6) &&
+            !binding_owned_by_other(&s_state, s_observed[i].mac, ip)) return true;
+    return false;
+}
 static bool address_available(const uint8_t mac[6], uint32_t ip)
 {
-    LOCK(); bool ok = s_healthy && !binding_owned_by_other(&s_state, mac, ip); UNLOCK();
+    LOCK();
+    bool ok = s_healthy && !binding_owned_by_other(&s_state, mac, ip) && !observed_other(mac, ip);
+    UNLOCK();
     return ok;
+}
+bool dhcp_observation_get(int i, dhcp_observation_t *out)
+{
+    if (!s_mutex || !out || i < 0 || i >= DHCP_OBSERVATIONS_MAX) return false;
+    LOCK(); *out = s_observed[i]; UNLOCK();
+    return binding_mac_valid(out->mac);
+}
+uint32_t dhcp_observation_forget(const uint8_t mac[6])
+{
+    LOCK();
+    dhcp_observation_t *o = observation(mac, false);
+    uint32_t ip = o ? o->ip : 0;
+    if (o) memset(o, 0, sizeof(*o));
+    UNLOCK();
+    return ip;
+}
+uint32_t dhcp_clients_lookup(const uint8_t mac[6])
+{
+    if (!s_mutex || !binding_mac_valid(mac)) return 0;
+    LOCK();
+    uint32_t ip = s_healthy ? binding_lookup(&s_state, mac) : 0;
+    dhcp_observation_t *o = observation(mac, false);
+    if (!ip && s_healthy && o && !binding_owned_by_other(&s_state, mac, o->ip)) ip = o->ip;
+    UNLOCK(); return ip;
+}
+uint32_t dhcp_client_resolve(const uint8_t mac[6], uint32_t dhcp_ip, uint32_t arp_ip,
+                             const char **source, bool *conflict)
+{
+    *source = ""; *conflict = false;
+    if (!s_mutex || !binding_mac_valid(mac)) return 0;
+    LOCK();
+    uint32_t ip = s_healthy ? binding_lookup(&s_state, mac) : 0;
+    dhcp_observation_t *o = observation(mac, false);
+    if (ip) *source = "persistent";
+    else if (s_healthy && o && o->ip && !binding_owned_by_other(&s_state, mac, o->ip)) {
+        ip = o->ip; *source = "observed";
+    }
+    if (o && o->conflict) *conflict = true;
+    uint32_t candidates[2] = {dhcp_ip, arp_ip};
+    for (int i = 0; i < 2; ++i) if (candidates[i]) {
+        if (!s_healthy || binding_owned_by_other(&s_state, mac, candidates[i]) ||
+            observed_other(mac, candidates[i]) || (ip && ip != candidates[i])) *conflict = true;
+        else if (!ip) { ip = candidates[i]; *source = i ? "arp" : "dhcp"; }
+    }
+    UNLOCK();
+    return ip;
+}
+int dhcp_remembered_snapshot(dhcp_remembered_t *out, int max)
+{
+    if (!s_mutex || !out || max <= 0) return 0;
+    int count = 0;
+    LOCK();
+    if (s_healthy) {
+        for (int i = 0; i < DHCP_RESERVATIONS_MAX && count < max; ++i) if (s_state.manual[i].valid) {
+            dhcp_reservation_t *r = &s_state.manual[i];
+            dhcp_remembered_t *v = &out[count++]; memset(v, 0, sizeof(*v));
+            memcpy(v->mac, r->mac, 6); v->ip = r->ip; v->manual = true;
+            memcpy(v->name, r->name, sizeof v->name);
+        }
+        for (int i = 0; i < DHCP_STICKY_MAX && count < max; ++i) if (s_state.sticky[i].ip) {
+            dhcp_sticky_t *r = &s_state.sticky[i]; bool duplicate = false;
+            for (int j = 0; j < count; ++j) if (!memcmp(out[j].mac, r->mac, 6)) duplicate = true;
+            if (duplicate) continue;
+            dhcp_remembered_t *v = &out[count++]; memset(v, 0, sizeof(*v));
+            memcpy(v->mac, r->mac, 6); v->ip = r->ip;
+        }
+    }
+    UNLOCK(); return count;
 }
 static bool prepare_ack(const uint8_t mac[6], uint32_t ip)
 {
     LOCK();
-    bool ok = s_healthy && !binding_owned_by_other(&s_state, mac, ip);
+    bool ok = s_healthy && !binding_owned_by_other(&s_state, mac, ip) && !observed_other(mac, ip);
     bool save = s_state.enabled || binding_lookup(&s_state, mac);
     bool known = binding_sticky(&s_state, mac) == ip;
     UNLOCK();
@@ -62,24 +153,35 @@ static bool prepare_ack(const uint8_t mac[6], uint32_t ip)
 }
 bool dhcp_reservations_observe(const uint8_t mac[6], uint32_t ip, bool associated)
 {
-    if (!s_mutex || !associated || !binding_mac_valid(mac) ||
-        !dhcps_address_valid(ip) || dhcps_address_in_use(mac, ip)) return false;
+    if (!s_mutex || !associated || !binding_mac_valid(mac) || !dhcps_address_valid(ip)) return false;
+    bool live_conflict = dhcps_address_in_use(mac, ip);
     LOCK();
     uint32_t known = binding_lookup(&s_state, mac);
-    bool ok = s_healthy && !binding_owned_by_other(&s_state, mac, ip) &&
-              (!known || known == ip);
+    dhcp_observation_t *o = observation(mac, true);
+    bool ok = s_healthy && o && !live_conflict && !observed_other(mac, ip) &&
+              !binding_owned_by_other(&s_state, mac, ip) && (!known || known == ip) &&
+              (!o->ip || o->ip == ip);
+    bool report = !ok && o && !o->conflict;
+    if (o) {
+        o->conflict = !ok;
+        if (ok) o->ip = ip;
+    }
     bool enabled = s_state.enabled;
     UNLOCK();
+    if (report) ESP_LOGW(TAG, "passive IP conflict; preserving confirmed owner for %02x:%02x:%02x:%02x:%02x:%02x",
+                        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     if (!ok) return false;
-    if (known == ip) return true; /* restore ARP, no flash write (also when OFF) */
-    if (!enabled) return false;
-    return prepare_ack(mac, ip); /* same atomic NVS record and owner policy as DHCP */
+    /* Observation survives persistence failure in RAM, never masquerades as sticky.
+     * OFF only disables automatic persistence, not validated discovery/ARP. */
+    if (enabled && !known) (void)prepare_ack(mac, ip);
+    return true;
 }
 void dhcp_reservations_init(void)
 {
     if (s_mutex) return;
     s_mutex = xSemaphoreCreateMutex();
     configASSERT(s_mutex);
+    memset(s_observed, 0, sizeof s_observed);
     memset(&s_state, 0, sizeof s_state); /* opt-in; ordinary DHCP by default */
     nvs_handle_t nvs;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs);
@@ -104,7 +206,7 @@ void dhcp_reservations_init(void)
         memset(&s_state, 0, sizeof s_state);
         ESP_LOGE(TAG, "Invalid/unreadable NVS bindings: DHCP allocation disabled; preserve NVS for recovery");
     }
-    dhcps_set_reservation_lookup(dhcp_reservations_lookup);
+    dhcps_set_reservation_lookup(dhcp_clients_lookup);
     dhcps_set_address_policy(address_available, prepare_ack);
     BOOT_MARK(s_healthy ? "sticky bindings loaded / validated" : "sticky bindings load FAILED");
 }
@@ -160,12 +262,25 @@ typedef struct {
 static void save_on_tcpip(void *arg)
 {
     save_request_t *r = arg;
+    if (s_refresh_observations) s_refresh_observations();
     r->result = ESP_ERR_INVALID_STATE;
     if (!s_healthy) goto done;
     dhcp_bindings_t *next = malloc(sizeof(*next));
     if (!next) { r->result = ESP_ERR_NO_MEM; goto done; }
     LOCK(); *next = s_state; UNLOCK();
     if (r->enabled >= 0) next->enabled = !!r->enabled;
+    /* Adopt the actual validated transient address for explicit Reserve, also OFF.
+     * Enabling Sticky imports associated observations without waiting for traffic. */
+    for (int i = 0; i < DHCP_OBSERVATIONS_MAX; ++i) {
+        dhcp_observation_t *o = &s_observed[i];
+        if (!o->ip) continue;
+        bool requested = false;
+        for (int j = 0; j < r->count; ++j) if (!memcmp(r->arr[j].mac, o->mac, 6)) requested = true;
+        if (next->enabled || requested) {
+            if (!dhcps_address_valid(o->ip) || dhcps_address_in_use(o->mac, o->ip) ||
+                !binding_remember(next, o->mac, o->ip)) goto invalid;
+        }
+    }
     /* Capture ACKed addresses before changing ownership. Serialized with DHCP. */
     dhcp_lease_info_t leases[DHCP_RESERVATIONS_MAX];
     int n = dhcps_get_active_leases(leases, DHCP_RESERVATIONS_MAX);
@@ -186,7 +301,8 @@ static void save_on_tcpip(void *arg)
     if (!binding_replace_manual(next, r->arr, r->count)) goto invalid;
     for (int i = 0; i < DHCP_RESERVATIONS_MAX; ++i) if (next->manual[i].valid) {
         if (!dhcps_address_valid(next->manual[i].ip) ||
-            dhcps_address_in_use(next->manual[i].mac, next->manual[i].ip)) goto invalid;
+            dhcps_address_in_use(next->manual[i].mac, next->manual[i].ip) ||
+            observed_other(next->manual[i].mac, next->manual[i].ip)) goto invalid;
     }
     r->result = commit(next);
     free(next);

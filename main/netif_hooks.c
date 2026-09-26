@@ -275,6 +275,7 @@ void netif_hooks_init(void)
 {
     static bool installed = false;
     if (installed) return;
+    ap_passive_init();
 
     esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
     esp_netif_t *ap  = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");

@@ -20,8 +20,8 @@ def function(name):
     return source[start:i]
 (build/'allocator_under_test.inc').write_text('\n'.join(function(n) for n in ['parse_options','dhcps_address_valid','dhcps_address_in_use','parse_msg']),encoding='utf-8')
 (build/'ack_under_test.inc').write_text(function('send_ack'),encoding='utf-8')
-for name in ['bindings','allocator','arp','ack']:
+for name in ['bindings','allocator','arp','ack','diagnostics']:
     exe=build/(name+('.exe' if os.name=='nt' else ''))
-    command=shlex.split(a.cc)+['-std=c11','-Wall','-Wextra','-Werror','-Wno-unused-but-set-variable','-Wno-misleading-indentation','-Itests/host/stubs','-Imain','-Itests/host/build',f'tests/host/test_{name}.c','main/dhcp_bindings.c','-o',str(exe)]
+    command=shlex.split(a.cc)+['-std=c11','-Wall','-Wextra','-Werror','-Wno-unused-but-set-variable','-Wno-misleading-indentation','-Itests/host/stubs','-Imain','-Icomponents/dhcpserver/include','-Itests/host/build',f'tests/host/test_{name}.c','main/dhcp_bindings.c','-o',str(exe)]
     subprocess.run(command,cwd=root,check=True)
     subprocess.run([str(exe)],cwd=root,check=True)
