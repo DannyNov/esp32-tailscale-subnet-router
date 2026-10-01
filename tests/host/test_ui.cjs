@@ -16,7 +16,7 @@ const ctx = vm.createContext({document: {
 for (const name of ['escapeHtml', 'markDhcpDirty', 'snapshotDhcpResListFromDOM', 'renderDhcpResList',
                     'reserveDhcpClient', 'bindDhcpReserveButtons', 'renderDhcpRemembered', 'renderDhcpClients'])
   vm.runInContext(fn(name), ctx);
-const mac = 'a0:92:08:96:67:69', ip = '10.71.0.4';
+const mac = '02:00:00:00:00:01', ip = '192.0.2.4';
 ctx.renderDhcpRemembered([{mac, ip, name: '', type: 'auto', status: 'offline'}]);
 let output = nodes['dhcp-remembered-body'].innerHTML;
 assert(output.includes('unnamed') && output.includes('offline') && output.includes('Reserve'));
