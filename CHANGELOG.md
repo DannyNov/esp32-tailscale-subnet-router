@@ -6,11 +6,31 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.1.28-tuya1] — 2026-10-01
 ### Fixed
 - **Reserved low-power DHCP clients can renew after the server loses its in-memory lease table.** A DHCPREQUEST renewal whose `ciaddr` exactly matches the IP reserved for that MAC is now ACKed and recreates the lease entry after a DHCP-server restart. A different requested address is still rejected, and non-reserved clients keep the original validation path.
 - **DNS relay updates no longer restart the AP DHCP server after clients can connect.** The DNS-offer flag is enabled before Wi-Fi starts, and later DNS-address changes are applied live. This prevents the custom DHCP server from clearing its RAM lease table during normal uplink/DNS transitions.
 - **Connected-client IP reporting now falls back to ESP-IDF's ARP-backed station lookup when no DHCP lease exists.** Low-power clients that reassociate while reusing an existing IPv4 address can therefore still show their real IP in the AP client list even though `ACTIVE DHCP LEASES` remains empty.
 - **Reserved AP clients now seed a static ARP entry on association.** This lets Tailscale/LAN traffic reach a low-power device that reconnects with its previously reserved IPv4 address but sends neither DHCP nor ARP; the entry is removed when the station disconnects.
+
+## [0.1.28] — 2026-10-01
+
+A read-only SNMP agent, contributed by @gszigethy (#11). Off by default, and it costs no internal RAM until it is switched on. Device-tested before tagging on the WiFi-only reference router: manual OTA, full walk (82 objects) over v2c and v1, wrong and empty communities ignored, malformed and oversized datagrams survived, interface counters checked against real traffic, three tunnel reconnects with the agent running, repeated rapid enable/disable, settings kept across a reboot, internal heap back to the never-enabled level after disable (about 4.7 KB lower while enabled), six peers direct, an AP client through the router.
+
+### Fixed
+- SNMP now identifies the WireGuard `wg` netif by name, preventing a CGNAT-addressed WiFi or Ethernet uplink from being hooked as both itself and `ts0`. The router's ACL hooks install before SNMP hooks, and disabling SNMP restores its netif pointers.
+- A stored empty SNMP community disables the listener at boot until a valid community is saved. SNMP settings now use one NVS blob, with legacy keys read for migration; a failed save leaves the live agent unchanged.
+- The SNMP settings endpoint accepts the full four-field form, validates the 255-byte field limit, and the BER varbind buffer can encode every accepted system string.
+- The SNMP task leaves its receive loop as soon as a disable has taken its socket away, instead of going back to `recvfrom()` on a closed descriptor whose number lwIP may already have given to another socket.
+- The radio debug endpoint rejects malformed BSSIDs and octets outside the MAC address format instead of truncating them or reporting a false success.
+
+### Added
+- **Read-only SNMPv1/v2c agent**, off by default, configured from a card in the System tab (`GET`/`POST /api/snmp`). One FreeRTOS task on a BSD socket bound to `0.0.0.0:161` with its own BER codec — not lwIP's agent, which cannot be enabled in ESP-IDF 5.5.3 (`CONFIG_LWIP_SNMP` is not a Kconfig symbol, so setting it in `sdkconfig.defaults` is silently ignored). GET and GETNEXT only; there is no SET, so nothing can be changed over SNMP. Everything lands on standard MIBs so LibreNMS/Zabbix/Observium discover it with no custom MIB file: MIB-II system and interfaces, HOST-RESOURCES-MIB for per-core CPU load, memory and task count, and ENTITY-SENSOR-MIB for the die temperature. Traffic counters cover all three interfaces including the Tailscale tunnel, collected by wrapping the netif function pointers because lwIP's own `mib2_counters` are compiled out without `LWIP_SNMP`. Interfaces are resolved at runtime through `esp_netif` ifkeys, so a board with no Ethernet reports `ifOperStatus down` on `eth0` and works unchanged. One private OID remains — `1.3.6.1.4.1.99999.1.1.4.0` (`heapMinFreeBytes`), the only reading with no standard home.
+
+### Changed
+- `CONFIG_LWIP_MAX_SOCKETS` 24 → 26 (+1 for the SNMP UDP socket, +1 headroom). Existing build trees keep their generated `sdkconfig.esp32-s3`; copy this setting there or run a clean reconfigure after updating.
+- The web UI's CPU-temperature sampler reads through `snmp_agent_chip_temp_c()` instead of installing its own sensor handle. The chip has one thermal sensor and `temperature_sensor_install()` refuses a second owner, so with the agent claiming it at boot a second lazy-install would have failed and returned −999 forever.
+
 
 ## [0.1.27] — 2026-09-16
 
