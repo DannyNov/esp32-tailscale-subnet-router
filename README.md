@@ -204,9 +204,10 @@ Real-world results from the field (see [#9](../../issues/9) and
 > `factory_reset --confirm`, allowing a little extra time before retrying the
 > join. No log survives from the failed first boot, so this is a known rough
 > edge rather than a diagnosed bug. If you hit it, erase the flash and retry.
-> The `factory-full.bin` asset on the
-> [latest release](../../releases/latest) is a full-flash
-> image and rewrites the NVS region too, so it sidesteps this as well.
+> For this fork, follow the [tuya7 clean-install instructions](docs/TUYA7.md):
+> erase flash first, then write `firmware-0.1.27-tuya7-esp32-s3-factory.bin`
+> at `0x0`. The release targets N16R8; the board reports above are inherited
+> upstream experience, not tuya7 validation on every listed board.
 
 ## Quick start
 
