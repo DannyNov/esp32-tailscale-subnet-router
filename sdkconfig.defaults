@@ -187,6 +187,7 @@ CONFIG_LWIP_TCP_OOSEQ_MAX_PBUFS=4
 
 # --- DHCP server ------------------------------------------------------------
 CONFIG_LWIP_DHCPS_MAX_STATION_NUM=16
+CONFIG_LWIP_DHCPS_STATIC_ENTRIES=y
 
 # --- WiFi tuning ------------------------------------------------------------
 CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=48

@@ -1,3 +1,4 @@
+#include "boot_timing.h"
 /* Phase 1.5e exit-node default-route supervisor.
  *
  * 1.5c (Tailscale CGNAT routing for AP -> tailnet) works automatically:
@@ -161,7 +162,13 @@ static void route_supervisor_task(void *arg)
     (void)arg;
     ESP_LOGI(TAG, "supervisor task started (exit_node=%lu)",
              (unsigned long)tailscale_exit_node_ip);
+    bool online_logged = false;
     while (1) {
+        microlink_t *boot_ml = tailscale_get_microlink();
+        if (!online_logged && boot_ml && microlink_is_connected(boot_ml)) {
+            BOOT_MARK("Tailscale online (first observed, 2s poll)");
+            online_logged = true;
+        }
         struct netif *wg = find_wg_netif();
         struct netif *sta = find_sta_netif();
         /* wireguardif only flips its netif to LINK_UP after at least one

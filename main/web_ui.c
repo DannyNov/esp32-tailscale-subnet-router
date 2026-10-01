@@ -1,3 +1,4 @@
+#include "boot_timing.h"
 /* Single-page web UI server.
  *
  * SPDX-License-Identifier: MIT
@@ -8,6 +9,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
+#include "esp_wifi_ap_get_sta_list.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -77,6 +79,8 @@ extern const size_t index_html_gz_len;
 
 static esp_err_t index_handler(httpd_req_t *req)
 {
+    static bool first = true;
+    if (first) { BOOT_MARK("first HTTP GET /"); first = false; }
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
     /* Without this the browser happily reuses last session's SPA HTML
@@ -1828,6 +1832,12 @@ static esp_err_t dhcp_reservations_handler(httpd_req_t *req)
     }
     cJSON_AddItemToObject(root, "reservations", arr);
     cJSON_AddNumberToObject(root, "max", DHCP_RESERVATIONS_MAX);
+    bool sticky; int sticky_count; esp_err_t storage_error;
+    dhcp_sticky_status(&sticky, &sticky_count, &storage_error);
+    cJSON_AddBoolToObject(root, "sticky_enabled", sticky);
+    cJSON_AddNumberToObject(root, "sticky_count", sticky_count);
+    cJSON_AddNumberToObject(root, "sticky_max", DHCP_STICKY_MAX);
+    cJSON_AddStringToObject(root, "storage_status", esp_err_to_name(storage_error));
 
     char *body = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -1838,6 +1848,53 @@ static esp_err_t dhcp_reservations_handler(httpd_req_t *req)
     free(body);
     return err;
 }
+
+/* Persistent rows are independent of DHCP/ARP/association. Wi-Fi only annotates status. */
+static esp_err_t dhcp_remembered_handler(httpd_req_t *req)
+{
+    if (require_auth(req) != ESP_OK) return ESP_FAIL;
+    dhcp_remembered_t *rows = calloc(DHCP_REMEMBERED_MAX, sizeof(*rows));
+    cJSON *root = cJSON_CreateObject(), *arr = cJSON_CreateArray();
+    if (!rows || !root || !arr) {
+        free(rows); cJSON_Delete(root); cJSON_Delete(arr);
+        httpd_resp_send_500(req); return ESP_FAIL;
+    }
+    int count = dhcp_remembered_snapshot(rows, DHCP_REMEMBERED_MAX);
+    wifi_sta_list_t stations = {0};
+    (void)esp_wifi_ap_get_sta_list(&stations);
+    for (int i = 0; i < count; ++i) {
+        dhcp_remembered_t *r = &rows[i];
+        bool online = false;
+        for (int j = 0; j < stations.num; ++j)
+            if (!memcmp(stations.sta[j].mac, r->mac, 6)) online = true;
+        char mac[18], ip[16];
+        snprintf(mac, sizeof mac, "%02x:%02x:%02x:%02x:%02x:%02x",
+                 r->mac[0], r->mac[1], r->mac[2], r->mac[3], r->mac[4], r->mac[5]);
+        ip4_addr_t addr = {.addr = r->ip};
+        snprintf(ip, sizeof ip, IPSTR, IP2STR(&addr));
+        cJSON *entry = cJSON_CreateObject();
+        cJSON_AddStringToObject(entry, "mac", mac);
+        cJSON_AddStringToObject(entry, "ip", ip);
+        cJSON_AddStringToObject(entry, "name", r->name);
+        cJSON_AddStringToObject(entry, "type", r->manual ? "manual" : "auto");
+        cJSON_AddStringToObject(entry, "status", online ? "online" : "offline");
+        cJSON_AddItemToArray(arr, entry);
+    }
+    free(rows);
+    cJSON_AddItemToObject(root, "remembered", arr);
+    bool enabled; int sticky_count; esp_err_t error;
+    dhcp_sticky_status(&enabled, &sticky_count, &error);
+    cJSON_AddBoolToObject(root, "sticky_enabled", enabled);
+    cJSON_AddNumberToObject(root, "sticky_count", sticky_count);
+    cJSON_AddStringToObject(root, "storage_status", esp_err_to_name(error));
+    char *body = cJSON_PrintUnformatted(root); cJSON_Delete(root);
+    if (!body) { httpd_resp_send_500(req); return ESP_FAIL; }
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t err = httpd_resp_sendstr(req, body); free(body); return err;
+}
+static const httpd_uri_t uri_dhcp_remembered = {
+    .uri = "/api/dhcp/remembered", .method = HTTP_GET, .handler = dhcp_remembered_handler,
+};
 
 static esp_err_t dhcp_reservations_save_handler(httpd_req_t *req)
 {
@@ -1868,20 +1925,24 @@ static esp_err_t dhcp_reservations_save_handler(httpd_req_t *req)
     memset(out, 0, sizeof out);
     int n_in  = cJSON_GetArraySize(arr);
     int n_out = 0;
+    bool invalid = n_in > DHCP_RESERVATIONS_MAX;
+    cJSON *mode = cJSON_GetObjectItem(root, "sticky_enabled");
+    int sticky_enabled = cJSON_IsBool(mode) ? cJSON_IsTrue(mode) : -1;
+    if (mode && !cJSON_IsBool(mode)) invalid = true;
 
     for (int i = 0; i < n_in && n_out < DHCP_RESERVATIONS_MAX; i++) {
         cJSON *e = cJSON_GetArrayItem(arr, i);
-        if (!cJSON_IsObject(e)) continue;
+        if (!cJSON_IsObject(e)) { invalid = true; break; }
 
         cJSON *mac_j = cJSON_GetObjectItem(e, "mac");
         cJSON *ip_j  = cJSON_GetObjectItem(e, "ip");
-        if (!cJSON_IsString(mac_j) || !cJSON_IsString(ip_j)) continue;
+        if (!cJSON_IsString(mac_j) || !cJSON_IsString(ip_j)) { invalid = true; break; }
 
         dhcp_reservation_t *r = &out[n_out];
-        if (!parse_mac_str(mac_j->valuestring, r->mac)) continue;
+        if (!parse_mac_str(mac_j->valuestring, r->mac)) { invalid = true; break; }
 
         ip4_addr_t a;
-        if (!ip4addr_aton(ip_j->valuestring, &a) || a.addr == 0) continue;
+        if (!ip4addr_aton(ip_j->valuestring, &a) || a.addr == 0) { invalid = true; break; }
         r->ip = a.addr;
 
         cJSON *name_j = cJSON_GetObjectItem(e, "name");
@@ -1893,14 +1954,15 @@ static esp_err_t dhcp_reservations_save_handler(httpd_req_t *req)
     }
     cJSON_Delete(root);
 
-    esp_err_t err = dhcp_reservations_set_all(out, n_out);
-
-    /* Reservations apply on the next DHCP REQUEST — the table is hot-
-     * reloaded into the lookup cache, so no reboot is required. Clients
-     * already holding a non-matching lease keep it until expiry. */
-    nvs_save_errors_reset();
-    if (err != ESP_OK) nvs_save_record_err("dhcp_res", err);
-    return send_save_response(req);
+    esp_err_t err = invalid ? ESP_ERR_INVALID_ARG :
+        dhcp_reservations_save(out, n_out, sticky_enabled);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, err == ESP_ERR_INVALID_ARG ? HTTPD_400_BAD_REQUEST : HTTPD_500_INTERNAL_SERVER_ERROR,
+            err == ESP_ERR_INVALID_ARG ? "Invalid/conflicting reservation; no changes saved" : "Binding storage unavailable; no changes saved");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"ok\":true}");
 }
 
 static const httpd_uri_t uri_dhcp_reservations = {
@@ -1934,11 +1996,22 @@ static esp_err_t dhcp_leases_handler(httpd_req_t *req)
 
     /* Pull both views first so we can cross-reference them in one pass. */
     dhcp_lease_info_t leases[DHCP_LEASES_MAX_REPORT];
-    int lease_count = dhcps_get_active_leases(leases, DHCP_LEASES_MAX_REPORT);
+    int lease_count = dhcps_snapshot_leases(leases, DHCP_LEASES_MAX_REPORT);
 
     wifi_sta_list_t sta_list;
     memset(&sta_list, 0, sizeof sta_list);
     esp_wifi_ap_get_sta_list(&sta_list);
+
+    /*
+     * ESP-IDF can resolve AP stations independently of our DHCP lease table:
+     * it checks DHCPS first and then falls back to the lwIP ARP cache. This is
+     * important for low-power clients which reassociate while reusing a
+     * previously configured IPv4 address and therefore send no new DHCP
+     * exchange at all.
+     */
+    wifi_sta_mac_ip_list_t sta_ip_list;
+    memset(&sta_ip_list, 0, sizeof sta_ip_list);
+    esp_err_t sta_ip_err = esp_wifi_ap_get_sta_list_with_ip(&sta_list, &sta_ip_list);
 
     cJSON *root         = cJSON_CreateObject();
     cJSON *clients_arr  = cJSON_CreateArray();
@@ -1958,17 +2031,20 @@ static esp_err_t dhcp_leases_handler(httpd_req_t *req)
                  sta->mac[3], sta->mac[4], sta->mac[5]);
 
         const char *hostname = "";
-        uint32_t    ip_nbo   = 0;
-        for (int j = 0; j < lease_count; j++) {
-            if (memcmp(leases[j].mac, sta->mac, 6) == 0) {
-                hostname = leases[j].hostname;
-                ip_nbo   = leases[j].ip;
-                break;
-            }
+        uint32_t dhcp_ip = 0, arp_ip = 0;
+        dhcp_forcerenew_t forcerenew = DHCP_FORCERENEW_UNKNOWN;
+        for (int j = 0; j < lease_count; ++j) if (!memcmp(leases[j].mac, sta->mac, 6)) {
+            hostname = leases[j].hostname; dhcp_ip = leases[j].ip;
+            forcerenew = leases[j].forcerenew; break;
         }
-
-        const char *res_name = dhcp_reservations_lookup_name_by_mac(sta->mac);
-        bool reserved        = dhcp_reservations_lookup(sta->mac) != 0;
+        if (sta_ip_err == ESP_OK) for (int j = 0; j < sta_ip_list.num; ++j)
+            if (!memcmp(sta_ip_list.sta[j].mac, sta->mac, 6)) arp_ip = sta_ip_list.sta[j].ip.addr;
+        const char *ip_source; bool conflict;
+        uint32_t ip_nbo = dhcp_client_resolve(sta->mac, dhcp_ip, arp_ip, &ip_source, &conflict);
+        if (conflict) ESP_LOGW(TAG, "client IP conflict for %s; retaining confirmed owner", mac_str);
+        char res_name[DHCP_RESERVATION_NAME_LEN];
+        dhcp_reservations_name(sta->mac, res_name);
+        bool reserved = dhcp_reservations_is_manual(sta->mac);
 
         cJSON *e = cJSON_CreateObject();
         cJSON_AddStringToObject(e, "mac", mac_str);
@@ -1981,9 +2057,13 @@ static esp_err_t dhcp_leases_handler(httpd_req_t *req)
             cJSON_AddStringToObject(e, "ip", "");
         }
         cJSON_AddStringToObject(e, "hostname", hostname);
-        cJSON_AddStringToObject(e, "name",     res_name ? res_name : "");
+        cJSON_AddStringToObject(e, "ip_source", ip_source);
+        cJSON_AddBoolToObject(e, "ip_conflict", conflict);
+        cJSON_AddStringToObject(e, "forcerenew", dhcp_forcerenew_name(forcerenew));
+        cJSON_AddStringToObject(e, "name",     res_name);
         cJSON_AddNumberToObject(e, "rssi",     sta->rssi);
         cJSON_AddBoolToObject  (e, "reserved", reserved);
+        cJSON_AddBoolToObject(e, "stable", dhcp_reservations_lookup(sta->mac) != 0);
         cJSON_AddItemToArray(clients_arr, e);
     }
 
@@ -2002,6 +2082,7 @@ static esp_err_t dhcp_leases_handler(httpd_req_t *req)
         cJSON_AddStringToObject(e, "mac",      mac_str);
         cJSON_AddStringToObject(e, "ip",       ip_str);
         cJSON_AddStringToObject(e, "hostname", leases[j].hostname);
+        cJSON_AddStringToObject(e, "forcerenew", dhcp_forcerenew_name(leases[j].forcerenew));
         cJSON_AddNumberToObject(e, "lease_remaining", leases[j].lease_timer);
         cJSON_AddItemToArray(leases_arr, e);
     }
@@ -4556,7 +4637,9 @@ void web_ui_init(void)
     /* Pick up the operator-configured session idle timeout before we
      * start handing out cookies, so the very first login uses the
      * persisted Max-Age instead of the compile-time default. */
+    BOOT_MARK("web auth settings begin");
     session_timeout_load();
+    BOOT_MARK("web auth settings ready");
 
     /* HTTPS→HTTP swap (2026-05-24): the self-signed esp_https_server
      * + mbedTLS combo cost ~20 KB heap per active TLS session and was
@@ -4573,7 +4656,7 @@ void web_ui_init(void)
      * instead of WebCrypto's ~100 ms. */
     httpd_config_t conf           = HTTPD_DEFAULT_CONFIG();
     conf.uri_match_fn             = httpd_uri_match_wildcard;
-    conf.max_uri_handlers         = 58;
+    conf.max_uri_handlers         = 59;
     conf.stack_size               = 12288;
     /* Without the mbedTLS context cost we can afford the bigger pool
      * the pre-HTTPS web server used. The SPA's first-paint opens 5-7
@@ -4583,10 +4666,12 @@ void web_ui_init(void)
     conf.lru_purge_enable         = true;
     conf.server_port              = 80;
 
+    BOOT_MARK("httpd_start begin");
     if (httpd_start(&server, &conf) != ESP_OK) {
         ESP_LOGE(TAG, "httpd_start failed");
         return;
     }
+    BOOT_MARK("HTTP server started on :80");
     httpd_register_uri_handler(server, &uri_index);
     httpd_register_uri_handler(server, &uri_status);
     httpd_register_uri_handler(server, &uri_network);
@@ -4605,6 +4690,7 @@ void web_ui_init(void)
     httpd_register_uri_handler(server, &uri_dhcp_reservations);
     httpd_register_uri_handler(server, &uri_dhcp_reservations_save);
     httpd_register_uri_handler(server, &uri_dhcp_leases);
+    httpd_register_uri_handler(server, &uri_dhcp_remembered);
     httpd_register_uri_handler(server, &uri_dhcp_kick);
     httpd_register_uri_handler(server, &uri_portmap);
     httpd_register_uri_handler(server, &uri_portmap_save);
@@ -4643,6 +4729,7 @@ void web_ui_init(void)
     httpd_register_uri_handler(server, &uri_sdlog_download);
     httpd_register_uri_handler(server, &uri_sdlog_tail);
     httpd_register_uri_handler(server, &uri_sdlog_erase);
+    BOOT_MARK("Web UI listening (handlers registered)");
     ESP_LOGI(TAG, "web UI listening on :%d (HTTP)", conf.server_port);
     /* HTTPS redirect server gone with HTTPS itself — direct HTTP-on-80
      * is now the only listener, so nothing to redirect anywhere. */

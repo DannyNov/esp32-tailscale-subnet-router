@@ -6,6 +6,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+- **Reserved low-power DHCP clients can renew after the server loses its in-memory lease table.** A DHCPREQUEST renewal whose `ciaddr` exactly matches the IP reserved for that MAC is now ACKed and recreates the lease entry after a DHCP-server restart. A different requested address is still rejected, and non-reserved clients keep the original validation path.
+- **DNS relay updates no longer restart the AP DHCP server after clients can connect.** The DNS-offer flag is enabled before Wi-Fi starts, and later DNS-address changes are applied live. This prevents the custom DHCP server from clearing its RAM lease table during normal uplink/DNS transitions.
+- **Connected-client IP reporting now falls back to ESP-IDF's ARP-backed station lookup when no DHCP lease exists.** Low-power clients that reassociate while reusing an existing IPv4 address can therefore still show their real IP in the AP client list even though `ACTIVE DHCP LEASES` remains empty.
+- **Reserved AP clients now seed a static ARP entry on association.** This lets Tailscale/LAN traffic reach a low-power device that reconnects with its previously reserved IPv4 address but sends neither DHCP nor ARP; the entry is removed when the station disconnects.
+
 ## [0.1.27] — 2026-09-16
 
 The router stops rebooting on uplink channel changes, and a tidy-up inside microlink. Device-tested before tagging: manual OTA, a forced roam of the uplink from channel 11 to channel 1 and back with the AP client watched from its own side (no reboot, client stayed associated, tunnel back within half a minute, heap flat across six roams), six peers direct, an AP client through the router.

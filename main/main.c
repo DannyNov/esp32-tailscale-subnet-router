@@ -1,3 +1,5 @@
+#include "boot_timing.h"
+#include "ap_passive.h"
 /*
  * SPDX-FileCopyrightText: 2023-2024 Espressif Systems (Shanghai) CO LTD
  *
@@ -35,6 +37,9 @@
 #endif
 #include "lwip/err.h"
 #include "lwip/sys.h"
+#include "lwip/tcpip.h"
+#include "lwip/etharp.h"
+#include "lwip/prot/ethernet.h"
 
 #include "tailscale_config.h"
 #include "tailscale_mtu.h"
@@ -51,6 +56,8 @@
 #include "dns_relay.h"
 #include "wifi_networks.h"
 #include "dhcp_reservations.h"
+#include "dhcps_ext.h"
+#include "esp_netif_net_stack.h"
 #include "portmap.h"
 #include "mac_deny.h"
 #include "reset_history.h"
@@ -134,7 +141,7 @@ void softap_set_dns_addr(esp_netif_t *esp_netif_ap, esp_netif_t *esp_netif_sta);
  * click or STA reconnect. */
 static void dns_relay_state_cb(bool healthy)
 {
-    (void)healthy;
+    if (healthy) BOOT_MARK("DNS relay ready (bound)");
     esp_netif_t *ap  = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
     esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
     ESP_LOGI(TAG_AP, "DNS relay state changed → healthy=%d — reapplying softap DNS",
@@ -283,13 +290,82 @@ static void wifi_apply_network(int idx)
     }
 }
 
+typedef struct {
+    ip4_addr_t ip;
+    struct eth_addr mac;
+    bool add;
+} reserved_arp_update_t;
+
+static void reserved_arp_update_cb(void *arg)
+{
+    reserved_arp_update_t *u = (reserved_arp_update_t *)arg;
+    if (!u) return;
+
+#if ETHARP_SUPPORT_STATIC_ENTRIES
+    esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    struct netif *netif = ap ? esp_netif_get_netif_impl(ap) : NULL;
+    u->ip.addr = dhcp_reservations_lookup(u->mac.addr);
+    if (!netif || !u->ip.addr || !dhcps_address_valid(u->ip.addr) ||
+        dhcps_address_in_use(u->mac.addr, u->ip.addr)) { free(u); return; }
+    err_t err = u->add
+        ? tsr_etharp_add_static_entry(netif, &u->ip, &u->mac)
+        : tsr_etharp_remove_static_entry(netif, &u->ip);
+
+    ESP_LOGI(TAG_AP, "%s reserved ARP " IPSTR " -> " MACSTR ": %d",
+             u->add ? "install" : "remove",
+             IP2STR(&u->ip),
+             MAC2STR(u->mac.addr),
+             (int)err);
+#else
+    ESP_LOGW(TAG_AP, "reserved ARP requested but ETHARP static entries are disabled");
+#endif
+
+    free(u);
+}
+
+static void schedule_reserved_arp(const uint8_t mac[6], bool add)
+{
+    uint32_t reserved_ip = dhcp_reservations_lookup(mac);
+    if (!reserved_ip) return;
+
+    reserved_arp_update_t *u = calloc(1, sizeof(*u));
+    if (!u) {
+        ESP_LOGE(TAG_AP, "OOM scheduling reserved ARP update");
+        return;
+    }
+
+    u->ip.addr = reserved_ip;
+    memcpy(u->mac.addr, mac, 6);
+    u->add = add;
+
+    err_t err = tcpip_callback(reserved_arp_update_cb, u);
+    if (err != ERR_OK) {
+        ESP_LOGE(TAG_AP, "tcpip_callback for reserved ARP failed: %d", (int)err);
+        free(u);
+    }
+}
+
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STACONNECTED) {
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_START) {
+        BOOT_MARK("AP ready (AP_START)");
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STOP) {
+        ap_passive_associations_changed();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STACONNECTED) {
         wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *) event_data;
         ESP_LOGI(TAG_AP, "Station "MACSTR" joined, AID=%d",
                  MAC2STR(event->mac), event->aid);
+
+        /*
+         * A reserved low-power client may reassociate while reusing its
+         * previous IPv4 address without sending DHCP or ARP. Seed a static
+         * ARP entry from the authoritative MAC->IP reservation so routed
+         * traffic (including Tailscale -> AP) can reach it immediately.
+         * This is removed when the station leaves.
+         */
+        schedule_reserved_arp(event->mac, true);
+
         /* MAC denylist enforcement runs at associate time — the Wi-Fi
          * driver has no built-in MAC ACL on ESP-IDF, so the cheapest
          * place to drop a banned client is the next tick, before
@@ -307,6 +383,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *) event_data;
         ESP_LOGI(TAG_AP, "Station "MACSTR" left, AID=%d, reason:%d",
                  MAC2STR(event->mac), event->aid, event->reason);
+        schedule_reserved_arp(event->mac, false);
+        ap_passive_associations_changed();
         if (connect_count > 0) connect_count--;
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
@@ -329,6 +407,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         }
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        BOOT_MARK("STA got IP");
         ip_event_got_ip_t *event = (ip_event_got_ip_t *) event_data;
         ESP_LOGI(TAG_STA, "Got IP:" IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
@@ -431,6 +510,24 @@ esp_netif_t *wifi_init_softap(void)
     }
     free(nvs_ap_ip);
     free(nvs_ap_mask);
+
+    /*
+     * Enable DNS in DHCP offers once, before esp_wifi_start() makes the AP
+     * visible to clients. esp_netif_dhcps_option(SET) requires the server to
+     * be stopped, and the custom dhcps_stop() drops its in-memory lease list.
+     * Doing that here is harmless because no station can have a lease yet.
+     * Later DNS-address changes must NOT restart DHCP; low-power clients can
+     * keep using an old address while the server forgets it, which can lead to
+     * missing lease/IP reporting and even duplicate dynamic assignments.
+     */
+    {
+        uint8_t dhcps_offer_option = DHCPS_OFFER_DNS;
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_dhcps_stop(esp_netif_ap));
+        ESP_ERROR_CHECK(esp_netif_dhcps_option(
+            esp_netif_ap, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER,
+            &dhcps_offer_option, sizeof(dhcps_offer_option)));
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_dhcps_start(esp_netif_ap));
+    }
 
     char *nvs_ssid = nvs_param_get_str("ap_ssid");
     char *nvs_pw   = nvs_param_get_str("ap_passwd");
@@ -609,11 +706,13 @@ void softap_set_dns_addr(esp_netif_t *esp_netif_ap,esp_netif_t *esp_netif_sta)
         dns.ip.u_addr.ip4.addr = a.addr;
     }
 
-    uint8_t dhcps_offer_option = DHCPS_OFFER_DNS;
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_dhcps_stop(esp_netif_ap));
-    ESP_ERROR_CHECK(esp_netif_dhcps_option(esp_netif_ap, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER, &dhcps_offer_option, sizeof(dhcps_offer_option)));
+    /*
+     * The DHCP offer-DNS bit is enabled once in wifi_init_softap(), before
+     * clients can associate. Updating the DNS server itself is safe while
+     * DHCP is running (esp_netif_set_dns_info writes the live DHCPS DNS
+     * slot), so do not stop/start DHCPS here: stop() clears active leases.
+     */
     ESP_ERROR_CHECK(esp_netif_set_dns_info(esp_netif_ap, ESP_NETIF_DNS_MAIN, &dns));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_dhcps_start(esp_netif_ap));
 
     if (used_override) {
         ESP_LOGI(TAG_AP, "AP DHCP-offered DNS = %u.%u.%u.%u (operator override)",
@@ -632,6 +731,7 @@ char g_reboot_why[32] = {0};
 
 void app_main(void)
 {
+    BOOT_MARK("app_main entry");
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
@@ -642,24 +742,31 @@ void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+    BOOT_MARK("NVS ready");
 
     /* Install the ESP_LOG ring buffer + RTC-NOINIT pre-crash buffer as
      * early as possible so the boot-time output is recoverable from
      * the /log page (live ring) and from /diag after a PANIC/WDT
      * (the pre-crash slice in slow RTC RAM survives reboot). */
+    BOOT_MARK("log_capture_init(0) begin");
     log_capture_init(0);
+    BOOT_MARK("log_capture_init(0) end");
 
     /* Record the current boot in the rst_hist ring buffer NOW — before
      * any other subsystem can crash, so the row is on disk even if init
      * goes wrong further down. Classifies the reset reason (with FLASH
      * / ROLLBACK detection via the app-SHA8 fingerprint trick), shifts
      * the prior 10 boots down a slot, and stamps hist[0]. */
+    BOOT_MARK("reset_history_record_boot() begin");
     reset_history_record_boot();
+    BOOT_MARK("reset_history_record_boot() end");
 
     /* AP-side DNS forwarder. Spawn early so the task is up by the time
      * wifi_init_softap publishes the AP IP — set_bind_addr triggers the
      * (re-)bind. Loads enable + upstream-override from NVS itself. */
+    BOOT_MARK("dns_relay_init() begin");
     dns_relay_init();
+    BOOT_MARK("dns_relay_init() end");
     dns_relay_set_state_cb(dns_relay_state_cb);
 
     /* If a core dump was saved on the previous boot, extract a one-line
@@ -667,6 +774,7 @@ void app_main(void)
      * to NVS so the telemetry "CRASH" column has something to send.
      * Erase the coredump after reading so the next panic gets a fresh
      * slot — the partition only ever holds the latest dump. */
+    BOOT_MARK("core dump / reset record processing begin");
     if (esp_core_dump_image_check() == ESP_OK) {
         esp_core_dump_summary_t *sum = malloc(sizeof(*sum));
         if (sum && esp_core_dump_get_summary(sum) == ESP_OK) {
@@ -726,35 +834,48 @@ void app_main(void)
         }
     }
 
+    BOOT_MARK("core dump / reset record processing end");
     /* Tailscale (microlink) settings — separate NVS keys (ts_*); loader
      * lives in tailscale_manager.c. Microlink lifecycle wires in later
      * once WiFi STA has an IP. */
+    BOOT_MARK("tailscale_init() begin");
     tailscale_init();
+    BOOT_MARK("tailscale_init() end");
 
     /* MTU / MSS clamp / PMTU manager. Owns the wg netif MTU plus the AP
      * hook clamp values. Loads NVS now; the 30 s poll timer takes over
      * once microlink + the wg netif exist. */
+    BOOT_MARK("tailscale_mtu_init() begin");
     tailscale_mtu_init();
+    BOOT_MARK("tailscale_mtu_init() end");
 
     /* Anonymous telemetry — privacy-respecting flash/boot/heartbeat
      * reporter. Spawns a low-priority task that waits for ap_connect
      * before its first send. */
+    BOOT_MARK("telemetry_init() begin");
     telemetry_init();
+    BOOT_MARK("telemetry_init() end");
 
     /* Exit-node default-route supervisor. Background task flips
      * netif_default between STA and the WireGuard netif depending on
      * tailscale_exit_node_ip. Self-paces until netifs exist. */
+    BOOT_MARK("lwip_route_hook_init() begin");
     lwip_route_hook_init();
+    BOOT_MARK("lwip_route_hook_init() end");
 
     /* ACL firewall — initialise the in-memory rule tables, then load any
      * persisted rules from NVS. The actual packet-filter hook lands in
      * the netif_hooks slice; this just makes the rules queryable. */
+    BOOT_MARK("load_acl_rules() begin");
     load_acl_rules();
+    BOOT_MARK("load_acl_rules() end");
 
     /* SD flight-recorder. Mounts the microSD and (if previously enabled
      * in NVS) starts the writer task. Installs a vprintf hook (chain:
      * sdlog -> UART). Stays dark with no crash when no card is present. */
+    BOOT_MARK("sdlog_init() begin");
     sdlog_init();
+    BOOT_MARK("sdlog_init() end");
 
     /* Report why the previous boot rebooted (set in NVS before our deliberate
      * esp_restart paths — e.g. channel realign). Read AFTER sdlog_init so the
@@ -773,7 +894,9 @@ void app_main(void)
     /* Remote TCP REPL on a configurable port (default 2323). Starts the
      * listener only when previously enabled in NVS — disabled by default
      * for security. Auth-gated by the shared web_password hash. */
+    BOOT_MARK("remote_console_init() begin");
     remote_console_init();
+    BOOT_MARK("remote_console_init() end");
 
     /* Initialize event group */
     s_wifi_event_group = xEventGroupCreate();
@@ -790,15 +913,24 @@ void app_main(void)
                     NULL,
                     NULL));
 
+    /* Restore ownership before any AP association or DHCP allocation. */
+    BOOT_MARK("dhcp_reservations_init() begin");
+    dhcp_reservations_init();
+    BOOT_MARK("dhcp_reservations_init() end");
+
     /*Initialize WiFi */
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    BOOT_MARK("Wi-Fi driver init begin");
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    BOOT_MARK("Wi-Fi driver init end");
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
 
     /* Initialize AP */
     ESP_LOGI(TAG_AP, "ESP_WIFI_MODE_AP");
+    BOOT_MARK("AP configure begin");
     esp_netif_t *esp_netif_ap = wifi_init_softap();
+    BOOT_MARK("AP IP configured");
 
     /* Tell the DNS relay which IP to bind on (the freshly-configured
      * AP IP). The relay task watches this and (re-)binds on change. */
@@ -811,10 +943,14 @@ void app_main(void)
 
     /* Initialize STA */
     ESP_LOGI(TAG_STA, "ESP_WIFI_MODE_STA");
+    BOOT_MARK("STA configure begin");
     esp_netif_t *esp_netif_sta = wifi_init_sta();
+    BOOT_MARK("STA configured");
 
     /* Start WiFi */
+    BOOT_MARK("Wi-Fi start begin");
     ESP_ERROR_CHECK(esp_wifi_start() );
+    BOOT_MARK("Wi-Fi start returned");
 
     /* Optional TX-power override. NVS "tx_pwr" is a u8 in 0.25 dBm
      * steps (matches esp_wifi_set_max_tx_power): valid range is 8..84
@@ -841,6 +977,7 @@ void app_main(void)
     esp_netif_set_default_netif(esp_netif_sta);
 
     /* Enable napt on the AP netif */
+    BOOT_MARK("NAPT enable begin");
     if (esp_netif_napt_enable(esp_netif_ap) != ESP_OK) {
         ESP_LOGE(TAG_STA, "NAPT not enabled on the netif: %p", esp_netif_ap);
     }
@@ -849,7 +986,9 @@ void app_main(void)
      * four ACL chains (to_esp / from_esp / to_ap / from_ap) actually
      * drop denied traffic. Must run AFTER esp_wifi_start so the netifs
      * exist and have their default input/linkoutput function pointers. */
+    BOOT_MARK("netif_hooks_init() begin");
     netif_hooks_init();
+    BOOT_MARK("netif_hooks_init() end");
 
     /* STA TTL hop-limit override — 0 = passthrough, else every outgoing
      * IPv4 frame's TTL is rewritten to this value. Operator config from
@@ -865,12 +1004,9 @@ void app_main(void)
      * function reads it to set up the initial association. The init
      * also migrates the legacy single-network NVS keys into slot 0
      * on first boot. */
+    BOOT_MARK("wifi_networks_init() begin");
     wifi_networks_init();
-
-    /* DHCP reservation table — read now so the cached lookups are
-     * ready before the AP netif starts handing out leases. The
-     * matching DHCP-server hook lives in components/dhcpserver/. */
-    dhcp_reservations_init();
+    BOOT_MARK("wifi_networks_init() end");
 
     /* Apply POSIX timezone before SNTP runs — so the first time-of-day
      * print after the first sync renders in local time. Empty NVS value
@@ -888,26 +1024,36 @@ void app_main(void)
     /* Port-forwarding (NAPT portmap) table — load from NVS now; the
      * actual lwIP bindings are installed from the IP_GOT_IP handler
      * once we know the STA's bind IP. */
+    BOOT_MARK("portmap_init() begin");
     portmap_init();
+    BOOT_MARK("portmap_init() end");
 
     /* MAC denylist — the AP_STACONNECTED handler consults this cache
      * (lock-free) to decide whether to deauth the freshly-associated
      * station before it gets anywhere. */
+    BOOT_MARK("mac_deny_init() begin");
     mac_deny_init();
+    BOOT_MARK("mac_deny_init() end");
 
     /* OTA — manual web upload handler + (optionally) the GitHub poller.
      * Init must precede web_ui so the handler is ready when the server
      * starts; the poller task self-paces with a 20 s settle delay so
      * it doesn't fight the boot-time WiFi bring-up. */
+    BOOT_MARK("ota_init() begin");
     ota_init();
+    BOOT_MARK("ota_init() end");
 
     /* HTTP server with the embedded SPA at / + the JSON API endpoints. */
+    BOOT_MARK("web_ui_init() begin");
     web_ui_init();
+    BOOT_MARK("web_ui_init() end");
 
     /* Serial REPL on UART0 (115200 8N1). Starts last so every other
      * subsystem the commands can poke is ready by the time the prompt
      * appears. Type `help` over `pio device monitor` / `idf.py monitor`. */
+    BOOT_MARK("cli_init() begin");
     cli_init();
+    BOOT_MARK("cli_init() end");
 
     /* Confirm this image is healthy so the bootloader rollback (enabled via
      * CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE) doesn't revert a fresh OTA on the

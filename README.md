@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform: ESP32-S3](https://img.shields.io/badge/platform-ESP32--S3-7c3aed.svg)](#hardware)
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-5.5%2B-e7352c.svg)](https://docs.espressif.com/projects/esp-idf/)
-[![CodeQL](https://github.com/Csontikka/esp32-tailscale-subnet-router/actions/workflows/codeql.yml/badge.svg)](https://github.com/Csontikka/esp32-tailscale-subnet-router/actions/workflows/codeql.yml)
+[![CodeQL](https://github.com/DannyNov/esp32-tailscale-subnet-router/actions/workflows/codeql.yml/badge.svg)](https://github.com/DannyNov/esp32-tailscale-subnet-router/actions/workflows/codeql.yml)
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-ea4aaa.svg?style=plastic&logo=githubsponsors)](https://github.com/sponsors/Csontikka)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-donate-yellow.svg?style=plastic)](https://buymeacoffee.com/csontikka)
 
@@ -17,11 +17,32 @@
 
 ---
 
-> **Status — early access (`v0.1.27`).** Runs daily on the reference
-> ESP32-S3 hardware and the core paths (WiFi NAT, Tailscale subnet
-> routing, DERP fallback, exit nodes, firewall) are exercised
-> continuously. Treat it as a capable hobby build, not a hardened
-> appliance — see [Known limitations](#known-limitations).
+## DannyNov fork — Tuya client support
+
+This is a fork of [Csontikka/esp32-tailscale-subnet-router](https://github.com/Csontikka/esp32-tailscale-subnet-router), with address discovery and persistence improvements for sleeping Tuya and other low-power AP clients. Original authorship and MIT licensing are retained.
+
+**Current release: [0.1.27-tuya7](https://github.com/DannyNov/esp32-tailscale-subnet-router/releases/tag/v0.1.27-tuya7).** Host/regression tests and the ESP32-S3 build passed; the operator reported a successful field smoke check on the existing device. This remains hobby/early-access firmware; a complete hardware acceptance matrix has not been verified.
+
+- Passive discovery uses validated AP Ethernet-source MAC and IPv4-source pairs, even without a new DHCP exchange.
+- Sticky OFF discovers addresses temporarily in RAM without automatic NVS writes. Sticky ON persists ownership and restores it after reboot.
+- Remembered Clients shows saved devices while offline; Reserve keeps the actual MAC/IP and lets you add a friendly name.
+- Conflicting ownership is rejected. DHCP Option 145 is diagnostic only; no FORCERENEW packets are sent.
+
+### Download and install
+
+Download assets from the [GitHub Release](https://github.com/DannyNov/esp32-tailscale-subnet-router/releases/tag/v0.1.27-tuya7):
+
+| File | Use |
+| --- | --- |
+| `firmware-0.1.27-tuya7-esp32-s3-ota.bin` | Existing device: upload through Web UI OTA, without erasing NVS. |
+| `firmware-0.1.27-tuya7-esp32-s3-factory.bin` | Fresh ESP32-S3 N16R8: full-chip erase, then serial flash at `0x0`. Erase deletes existing settings and identity. |
+| `SHA256SUMS.txt` / `factory-manifest.json` | Checksums and verified build blocks/offsets. |
+
+The existing 4 MB partition layout on N16R8 is retained. NVS schema and legacy migration are unchanged. See [installation, behavior and hardware checks](docs/TUYA7.md).
+
+**Open limitations:** intermittent long startup remains under investigation; boot timing logs are available. Forget sticky is deferred because sleeping clients may retain an address after server-side deletion. Also see [Known limitations](#known-limitations).
+
+The sections below describe the inherited upstream platform. Screenshots may predate this fork's Tuya additions.
 
 ## What it is
 
@@ -192,7 +213,7 @@ Real-world results from the field (see [#9](../../issues/9) and
 ### 1. Build & flash
 
 ```bash
-git clone --recurse-submodules https://github.com/Csontikka/esp32-tailscale-subnet-router
+git clone --recurse-submodules https://github.com/DannyNov/esp32-tailscale-subnet-router
 cd esp32-tailscale-subnet-router
 
 # PlatformIO (recommended)
@@ -542,9 +563,8 @@ guidelines, and **[docs/TESTING.md](docs/TESTING.md)** for the test harness.
 ## Support
 
 Found a bug or have an idea? Open an
-[issue](https://github.com/Csontikka/esp32-tailscale-subnet-router/issues).
-If this firmware saved you a router purchase or an afternoon of
-debugging, you can chip in:
+[issue in this fork](https://github.com/DannyNov/esp32-tailscale-subnet-router/issues).
+To support the original upstream author, you can use their links:
 [buy me a coffee](https://buymeacoffee.com/csontikka) ☕ or [sponsor me on GitHub](https://github.com/sponsors/Csontikka)
 
 <p align="center">

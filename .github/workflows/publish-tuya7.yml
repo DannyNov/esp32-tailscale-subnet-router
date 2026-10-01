@@ -1,0 +1,57 @@
+name: Publish verified tuya7 release
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-tuya7.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-tuya7
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'DannyNov/esp32-tailscale-subnet-router' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_SHA: fe9d502576e37271b9f890161b056c5f7353bfcb
+      TAG: v0.1.27-tuya7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check source build and release state
+        run: |
+          set -euo pipefail
+          gh api repos/$GH_REPO/actions/runs/36223192734 > source-run.json
+          jq -e --arg sha "$SOURCE_SHA" '.head_sha == $sha and .conclusion == "success"' source-run.json
+          if gh release view "$TAG" --json isDraft > release-state.json 2>/dev/null; then
+            jq -e '.isDraft == true' release-state.json
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          name: esp32-s3-0.1.27-tuya7
+          run-id: 36223192734
+          github-token: ${{ github.token }}
+          path: release-assets
+      - name: Verify original tested binaries
+        working-directory: release-assets
+        run: |
+          set -euo pipefail
+          echo '9cec558001593be03601b86a37ed75993703f75535cc158719ca610453efb670  firmware-0.1.27-tuya7-esp32-s3-ota.bin' | sha256sum -c -
+          echo 'f1ca636eac15618c2e740f962962fd5b40a4c0794f1fdde7d0beb80832105f44  firmware-0.1.27-tuya7-esp32-s3-factory.bin' | sha256sum -c -
+          sha256sum -c SHA256SUMS.txt
+      - name: Publish complete release
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$SOURCE_SHA" --draft --title '0.1.27-tuya7 — Tuya sleeping-client support' --notes-file docs/RELEASE-TUYA7.md
+          fi
+          cp docs/TUYA7.md release-assets/README.md
+          gh release upload "$TAG" release-assets/*.bin release-assets/SHA256SUMS.txt release-assets/factory-manifest.json release-assets/README.md --clobber
+          gh release edit "$TAG" --notes-file docs/RELEASE-TUYA7.md --draft=false --latest
