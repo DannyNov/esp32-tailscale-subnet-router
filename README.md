@@ -21,7 +21,7 @@
 
 This is a fork of [Csontikka/esp32-tailscale-subnet-router](https://github.com/Csontikka/esp32-tailscale-subnet-router), with address discovery and persistence improvements for sleeping Tuya and other low-power AP clients. Original authorship and MIT licensing are retained.
 
-**Current release: [0.1.27-tuya7](https://github.com/DannyNov/esp32-tailscale-subnet-router/releases/tag/v0.1.27-tuya7).** Host/regression tests and the ESP32-S3 build passed; the operator reported a successful field smoke check on the existing device. This remains hobby/early-access firmware; a complete hardware acceptance matrix has not been verified.
+**Current release: [0.1.28-tuya1](https://github.com/DannyNov/esp32-tailscale-subnet-router/releases/tag/v0.1.28-tuya1).** Host/regression, UI and SNMP tests and the ESP32-S3 build passed for the published release. This remains hobby/early-access firmware; a complete hardware acceptance matrix has not been verified.
 
 - Passive discovery uses validated AP Ethernet-source MAC and IPv4-source pairs, even without a new DHCP exchange.
 - Sticky OFF discovers addresses temporarily in RAM without automatic NVS writes. Sticky ON persists ownership and restores it after reboot.
@@ -30,15 +30,15 @@ This is a fork of [Csontikka/esp32-tailscale-subnet-router](https://github.com/C
 
 ### Download and install
 
-Download assets from the [GitHub Release](https://github.com/DannyNov/esp32-tailscale-subnet-router/releases/tag/v0.1.27-tuya7):
+Download assets from the [GitHub Release](https://github.com/DannyNov/esp32-tailscale-subnet-router/releases/tag/v0.1.28-tuya1):
 
 | File | Use |
 | --- | --- |
-| `firmware-0.1.27-tuya7-esp32-s3-ota.bin` | Existing device: upload through Web UI OTA, without erasing NVS. |
-| `firmware-0.1.27-tuya7-esp32-s3-factory.bin` | Fresh ESP32-S3 N16R8: full-chip erase, then serial flash at `0x0`. Erase deletes existing settings and identity. |
+| `firmware-0.1.28-tuya1-esp32-s3-ota.bin` | Existing device: upload through Web UI OTA, without erasing NVS. |
+| `firmware-0.1.28-tuya1-esp32-s3-factory.bin` | Fresh ESP32-S3 N16R8: full-chip erase, then serial flash at `0x0`. Erase deletes existing settings and identity. |
 | `SHA256SUMS.txt` / `factory-manifest.json` | Checksums and verified build blocks/offsets. |
 
-The existing 4 MB partition layout on N16R8 is retained. NVS schema and legacy migration are unchanged. See [installation, behavior and hardware checks](docs/TUYA7.md).
+The existing 4 MB partition layout on N16R8 is retained. NVS schema and legacy migration are unchanged. See [installation, behavior and hardware checks](docs/RELEASE-0.1.28-TUYA1.md).
 
 **Open limitations:** intermittent long startup remains under investigation; boot timing logs are available. Forget sticky is deferred because sleeping clients may retain an address after server-side deletion. Also see [Known limitations](#known-limitations).
 
@@ -155,6 +155,12 @@ traffic you route through it.)*
   action, plus per-rule hit counters.
 - **DNS forwarder with cache** — on-board resolver for AP clients with a
   PSRAM-backed response cache and configurable upstream.
+- **SNMP monitoring** — read-only SNMPv1/v2c agent on UDP 161, off by
+  default. Standard MIBs so existing tooling discovers it without a custom
+  MIB file: MIB-II system and interfaces (`eth0`, `wlan0`, `ts0`, each with
+  live traffic counters — the Tailscale tunnel included),
+  HOST-RESOURCES-MIB for per-core CPU load and memory, and
+  ENTITY-SENSOR-MIB for the die temperature.
 - **Operations toolbox** — on-device ping / traceroute / route-explain,
   a 1 MB download/upload speed test, live WiFi scan, and a
   microSD "flight recorder" for catching control-plane stalls.
@@ -204,10 +210,10 @@ Real-world results from the field (see [#9](../../issues/9) and
 > `factory_reset --confirm`, allowing a little extra time before retrying the
 > join. No log survives from the failed first boot, so this is a known rough
 > edge rather than a diagnosed bug. If you hit it, erase the flash and retry.
-> For this fork, follow the [tuya7 clean-install instructions](docs/TUYA7.md):
-> erase flash first, then write `firmware-0.1.27-tuya7-esp32-s3-factory.bin`
+> For this fork, follow the [0.1.28-tuya1 clean-install instructions](docs/RELEASE-0.1.28-TUYA1.md):
+> erase flash first, then write `firmware-0.1.28-tuya1-esp32-s3-factory.bin`
 > at `0x0`. The release targets N16R8; the board reports above are inherited
-> upstream experience, not tuya7 validation on every listed board.
+> upstream experience, not fork validation on every listed board.
 
 ## Quick start
 
@@ -472,7 +478,7 @@ This is the *entire* payload — nothing else leaves the device:
 ```json
 {
   "dh": "a1b2c3d4e5f6071839",
-  "v":  "0.1.27",
+  "v":  "0.1.28",
   "bd": "2026-09-16",
   "et": "heartbeat",
   "bc": 276,
@@ -494,7 +500,7 @@ This is the *entire* payload — nothing else leaves the device:
 | Field | Meaning | Example |
 |---|---|---|
 | `dh` | anonymous device ID — 16-hex `SHA-256(WiFi MAC + fixed salt)` plus a 2-hex integrity check (18 hex total). One-way; it can't be turned back into your MAC | `a1b2c3d4e5f6071839` |
-| `v`  | firmware version | `0.1.27` |
+| `v`  | firmware version | `0.1.28` |
 | `bd` | firmware build date | `2026-09-16` |
 | `et` | event type — `boot`, `heartbeat`, or a crash report | `heartbeat` |
 | `bc` | total boot count | `276` |
