@@ -51,14 +51,35 @@ static inline bool ip_in_cgnat(uint32_t ip_host_order)
     return (ip_host_order & TAILSCALE_CGNAT_MASK) == TAILSCALE_CGNAT_NET;
 }
 
+/* RFC 1918 private space. This used to be spelled out inline four times --
+ * twice in the live hook, twice in route_explain() -- so one definition keeps
+ * the /diag explanation from drifting away from the decision it describes. */
+static inline bool ip_is_rfc1918(uint32_t ip_host_order)
+{
+    return ((ip_host_order & 0xFF000000UL) == 0x0A000000UL) ||   /* 10/8      */
+           ((ip_host_order & 0xFFF00000UL) == 0xAC100000UL) ||   /* 172.16/12 */
+           ((ip_host_order & 0xFFFF0000UL) == 0xC0A80000UL);     /* 192.168/16 */
+}
+
+/* The WireGuard tunnel netif. wireguardif names it "wg" (the same test
+ * tailscale_mtu.c and the SNMP agent use). Identified by name, not by a
+ * 100.64.0.0/10 address: an uplink can legitimately hold a CGNAT address too
+ * (Starlink, many LTE/5G routers, some ISPs), and whichever of the two came
+ * first in netif_list used to be taken for the tunnel -- the uplink itself
+ * whenever the tunnel had no address yet. */
+static inline bool netif_is_wg(const struct netif *n)
+{
+    return n && n->name[0] == 'w' && n->name[1] == 'g';
+}
+
 static struct netif *find_wg_netif(void)
 {
     extern struct netif *netif_list;
     for (struct netif *n = netif_list; n; n = n->next) {
+        if (!netif_is_wg(n)) continue;
         const ip4_addr_t *addr = netif_ip4_addr(n);
         if (addr == NULL || ip4_addr_isany_val(*addr)) continue;
-        uint32_t ip = lwip_ntohl(ip4_addr_get_u32(addr));
-        if (ip_in_cgnat(ip)) return n;
+        return n;
     }
     return NULL;
 }
@@ -400,8 +421,14 @@ struct netif *__wrap_ip4_route_src_hook(const ip4_addr_t *src,
             const ip4_addr_t *mask = netif_ip4_netmask(n);
             if (addr == NULL || mask == NULL) continue;
             if (ip4_addr_isany_val(*addr)) continue;
+            /* Only interfaces that can actually carry the packet. Returning a
+             * netif from this hook bypasses the up/link-up test ip4_route()
+             * would otherwise apply, so a down interface that still holds a
+             * stale address became a silent black hole rather than a routing
+             * failure the caller can report. */
+            if (!netif_is_up(n) || !netif_is_link_up(n)) continue;
             /* Skip the WG netif (CGNAT — handled in step 1, would loop). */
-            if (ip_in_cgnat(lwip_ntohl(ip4_addr_get_u32(addr)))) continue;
+            if (netif_is_wg(n)) continue;
 
             /* 2a: dst sits inside this netif's own prefix. This MUST include
              * the AP netif — packets to 192.168.4.x (AP clients, e.g. Pi at
@@ -430,9 +457,7 @@ struct netif *__wrap_ip4_route_src_hook(const ip4_addr_t *src,
         }
 
         /* 2b: RFC 1918 fallback. */
-        bool is_private = ((dst_hbo & 0xFF000000UL) == 0x0A000000UL) ||  /* 10.0.0.0/8 */
-                          ((dst_hbo & 0xFFF00000UL) == 0xAC100000UL) ||  /* 172.16.0.0/12 */
-                          ((dst_hbo & 0xFFFF0000UL) == 0xC0A80000UL);    /* 192.168.0.0/16 */
+        bool is_private = ip_is_rfc1918(dst_hbo);
         if (is_private && sta_match != NULL) {
             if (should_log_route_hook()) {
                 ESP_LOGW(TAG, "[ROUTE_HOOK] LAN_RFC1918 src=%lu.%lu.%lu.%lu "
@@ -467,9 +492,7 @@ struct netif *__wrap_ip4_route_src_hook(const ip4_addr_t *src,
                 if (na && ip4_addr_cmp(src, na)) { src_is_self = true; break; }
             }
         }
-        bool is_priv = ((dst_hbo & 0xFF000000UL) == 0x0A000000UL) ||
-                       ((dst_hbo & 0xFFF00000UL) == 0xAC100000UL) ||
-                       ((dst_hbo & 0xFFFF0000UL) == 0xC0A80000UL);
+        bool is_priv = ip_is_rfc1918(dst_hbo);
         if (src_is_self) {
             /* CGNAT was already returned in step 1; here we just need
              * to bypass exit-node for the remaining public space. */
@@ -631,7 +654,8 @@ void route_explain(uint32_t src_hbo, uint32_t dst_hbo,
             const ip4_addr_t *addr = netif_ip4_addr(n);
             const ip4_addr_t *mask = netif_ip4_netmask(n);
             if (!addr || !mask || ip4_addr_isany_val(*addr)) continue;
-            if (ip_in_cgnat(lwip_ntohl(ip4_addr_get_u32(addr)))) continue;
+            if (!netif_is_up(n) || !netif_is_link_up(n)) continue;  /* mirrors the hook */
+            if (netif_is_wg(n)) continue;   /* mirrors the hook */
             if ((dst.addr & mask->addr) == (addr->addr & mask->addr)) {
                 name_netif(n, out_netif, out_netif_size);
                 snprintf(out, out_size,
@@ -642,9 +666,7 @@ void route_explain(uint32_t src_hbo, uint32_t dst_hbo,
                 sta_match = n;
             }
         }
-        bool is_private = ((dst_hbo & 0xFF000000UL) == 0x0A000000UL) ||
-                          ((dst_hbo & 0xFFF00000UL) == 0xAC100000UL) ||
-                          ((dst_hbo & 0xFFFF0000UL) == 0xC0A80000UL);
+        bool is_private = ip_is_rfc1918(dst_hbo);
         if (is_private && sta_match) {
             name_netif(sta_match, out_netif, out_netif_size);
             snprintf(out, out_size,
@@ -658,9 +680,7 @@ void route_explain(uint32_t src_hbo, uint32_t dst_hbo,
      * ESP's own DERP/STUN sessions); forwarded public destinations egress
      * via the WG tunnel (the actual exit-node forwarding path). */
     if (tailscale_exit_node_ip != 0) {
-        bool is_priv = ((dst_hbo & 0xFF000000UL) == 0x0A000000UL) ||
-                       ((dst_hbo & 0xFFF00000UL) == 0xAC100000UL) ||
-                       ((dst_hbo & 0xFFFF0000UL) == 0xC0A80000UL);
+        bool is_priv = ip_is_rfc1918(dst_hbo);
         if (!is_priv) {
             if (src_is_self) {
                 for (struct netif *n = netif_list; n; n = n->next) {
