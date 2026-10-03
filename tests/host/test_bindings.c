@@ -2,12 +2,18 @@
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
+#include <time.h>
+static time_t wall_s;
+static time_t test_time(time_t *out) { if(out)*out=wall_s; return wall_s; }
+#define time test_time
 #include "../../main/dhcp_reservations.c"
 static unsigned char disk[sizeof(dhcp_bindings_t)], pending[sizeof(dhcp_bindings_t)];
 static dhcp_reservation_t legacy[DHCP_RESERVATIONS_MAX];
 static bool present, have_legacy, fail_write, fail_commit;
 static size_t disk_size;
-static unsigned writes;
+static unsigned writes, seen_writes;
+static seen_blob_t seen_disk, seen_pending;
+static bool seen_present, pending_seen;
 static dhcps_address_policy_fn available_cb, ack_cb;
 static dhcp_lease_info_t live[16];
 static int live_count;
@@ -17,6 +23,10 @@ static const uint8_t b[6] = {2,0,0,0,0,2};
 esp_err_t nvs_open(const char *s, int mode, nvs_handle_t *h) { (void)s;(void)mode;*h=1;return ESP_OK; }
 esp_err_t nvs_get_blob(nvs_handle_t h, const char *key, void *out, size_t *size) {
     (void)h;
+    if (!strcmp(key,"dhcp_seen_v1")) {
+        if (!seen_present) return ESP_ERR_NVS_NOT_FOUND;
+        memcpy(out,&seen_disk,sizeof seen_disk); *size=sizeof seen_disk; return ESP_OK;
+    }
     if (!strcmp(key,"dhcp_res")) {
         if (!have_legacy) return ESP_ERR_NVS_NOT_FOUND;
         memcpy(out,legacy,sizeof legacy); *size=sizeof legacy; return ESP_OK;
@@ -26,12 +36,15 @@ esp_err_t nvs_get_blob(nvs_handle_t h, const char *key, void *out, size_t *size)
     memcpy(out,disk,disk_size); *size=disk_size; return ESP_OK;
 }
 esp_err_t nvs_set_blob(nvs_handle_t h,const char *key,const void *p,size_t n) {
-    (void)h;(void)key; ++writes;
+    (void)h; pending_seen=!strcmp(key,"dhcp_seen_v1");
+    if(pending_seen) { ++seen_writes; if(fail_write)return ESP_FAIL;assert(n==sizeof seen_pending);memcpy(&seen_pending,p,n);return ESP_OK; }
+    ++writes;
     if (fail_write) return ESP_FAIL;
     assert(n==sizeof pending);memcpy(pending,p,n);return ESP_OK;
 }
 esp_err_t nvs_commit(nvs_handle_t h) {
     (void)h;if (fail_commit) return ESP_FAIL;
+    if(pending_seen) { seen_disk=seen_pending;seen_present=true;return ESP_OK; }
     memcpy(disk,pending,sizeof disk);disk_size=sizeof disk;present=true;return ESP_OK;
 }
 void nvs_close(nvs_handle_t h) { (void)h; }
@@ -43,13 +56,15 @@ bool dhcps_address_in_use(const uint8_t mac[6],uint32_t ip) {
     for(int i=0;i<live_count;++i) if(live[i].ip==ip&&memcmp(live[i].mac,mac,6))return true;return false;
 }
 static void reboot(void) { vSemaphoreDelete(s_mutex);s_mutex=NULL;s_healthy=false;live_count=0;memset(&s_state,0,sizeof s_state);dhcp_reservations_init(); }
-static void fresh(void) { present=have_legacy=fail_write=fail_commit=false;writes=0;memset(legacy,0,sizeof legacy);reboot(); }
+static void fresh(void) { present=have_legacy=fail_write=fail_commit=seen_present=pending_seen=false;writes=seen_writes=0;wall_s=0;memset(legacy,0,sizeof legacy);reboot(); }
 static dhcp_reservation_t reservation(const uint8_t mac[6],uint32_t ip) { dhcp_reservation_t r={.ip=ip,.valid=1};memcpy(r.mac,mac,6);return r; }
 #include "test_passive.inc"
 #include "test_remembered.inc"
+#include "test_last_seen.inc"
 int main(void) {
     test_passive();
     test_remembered();
+    test_last_seen();
     fresh();assert(s_healthy);assert(!s_state.enabled);
     assert(ack_cb(a,IP(4)));assert(writes==0); /* ordinary DHCP unchanged */
     assert(dhcp_reservations_save(NULL,0,1)==ESP_OK);

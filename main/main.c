@@ -379,6 +379,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
              * joined from the application's point of view. */
             return;
         }
+        dhcp_last_seen_activity(event->mac);
         connect_count++;
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STADISCONNECTED) {
         wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *) event_data;

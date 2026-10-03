@@ -1,10 +1,48 @@
 # Changelog
 
+## 0.1.29-tuya1 — 2026-10-03 — Stable Last seen release
+
+- Add Last seen to Remembered Clients and numeric Unix-seconds `last_seen` API.
+  Confirmed Wi-Fi association and accepted passive AP IPv4 update RAM; stale
+  ARP/UI state never updates it. Browser formats relative and exact local time.
+- Add bounded optional `dhcp_seen_v1` checkpoints every 20 minutes per MAC,
+  checked by a minute timer. Preserve timestamps before SNTP, across reboot
+  and Sticky OFF; preserve `dhcp_bind_v1` ABI and existing legacy migration.
+- Extend host/UI/integration tests and Actions artifacts for `0.1.29-tuya1`.
+  See [release notes](docs/RELEASE-0.1.29-TUYA1.md) for storage details and
+  validation. Hardware smoke-tested by the user after OTA: Remembered Clients, offline age and online now confirmed working; previous behavior preserved. Published as stable v0.1.29-tuya1.
+
 All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.29-tuya] — 2026-10-02
+
+Historical integration base on `integration/0.1.29-tuya`, superseded by the hardware-smoke-tested stable `0.1.29-tuya1` release. This is the base Tuya version on upstream
+0.1.29; later fork revisions use `0.1.29-tuya1`, `0.1.29-tuya2`, etc.
+
+### Changed
+- Merge all upstream v0.1.29 route-hook and web-server hardening below.
+- Preserve transient passive discovery with Sticky OFF, persistent Sticky ON,
+  Remembered Clients/offline visibility, Reserve, conflict protection, Option 145
+  diagnostics (no FORCERENEW transmission), upstream SNMP and boot timing.
+- Check all 60 web handler registrations, including Remembered Clients and the
+  unauthenticated favicon, with a capacity of 72.
+- Publish OTA/factory BINs as `firmware-0.1.29-tuya-esp32-s3-ota.bin` and
+  `firmware-0.1.29-tuya-esp32-s3-factory.bin` in Actions artifacts only.
+- Retain the factory builder, partition layout, NVS schemas and legacy migrations.
+
+## [0.1.29] — 2026-10-02
+
+Four small hardening fixes, two of them contributed by @gszigethy (#12, #13). Device-tested before tagging on the WiFi-only reference router: manual OTA; the favicon served without a session and every one of the 48 web endpoints registered; the same 20 route lookups before and after with the exit node off and with exit node plus LAN bypass on; an AP client reaching the gateway, the uplink LAN, a tailnet peer and the internet in both modes; SNMP on and off; six peers direct. The CGNAT-uplink case itself could not be reproduced on the bench (no such uplink here), so that fix rests on the code and on unchanged behaviour on an ordinary uplink.
+
+### Fixed
+- **Web endpoints can no longer vanish silently.** The HTTP server's handler table was sized for exactly the 58 endpoints registered, and the result of each registration was ignored, so the next endpoint added would simply have answered 404 with nothing in the log. Registrations are now checked and logged, and the table has headroom (72).
+- **No more `/favicon.ico` 404s.** Every open browser tab produced a 404 and a "URI not found" warning in the device log. The web UI now carries its icon inline, and `/favicon.ico` serves the same icon (no login needed) for clients that ask anyway. Both ideas from [@gszigethy](https://github.com/gszigethy)'s fork.
+- **An uplink with a CGNAT address is no longer mistaken for the tunnel.** The route hook recognised the WireGuard interface by its 100.64.0.0/10 address, but an uplink can hold an address from that range too (Starlink, many LTE/5G routers, some ISPs). Until the tunnel had its own address — at boot and on every reconnect — the uplink itself was taken for the tunnel, so the exit-node supervisor could point the default route at it, and its subnet stayed excluded from the LAN bypass afterwards. The tunnel is now identified by its interface name (`wg`), as the MTU code and the SNMP agent already did. Contributed by [@gszigethy](https://github.com/gszigethy) (#13).
+- **LAN bypass no longer routes into an interface that is down.** With an exit node and LAN bypass on, the route hook returned the first interface whose prefix contained the destination without checking that it was up, so an interface that had lost its link but still held its address silently swallowed traffic to its old subnet. It now skips interfaces that are not up and link-up; `/api/tools/route` mirrors the same check. Contributed by [@gszigethy](https://github.com/gszigethy) (#12).
 
 ## [0.1.28-tuya1] — 2026-10-01
 ### Fixed

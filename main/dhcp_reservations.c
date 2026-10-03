@@ -1,6 +1,8 @@
 /* Persistent ownership: mutations are serialized on the TCP/IP task. */
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "nvs.h"
 #include "nvs_params.h"
@@ -20,6 +22,7 @@ static void (*s_refresh_observations)(void);
 void dhcp_observations_set_refresh(void (*refresh)(void)) { s_refresh_observations = refresh; }
 #define LOCK() xSemaphoreTake(s_mutex, portMAX_DELAY)
 #define UNLOCK() xSemaphoreGive(s_mutex)
+#include "dhcp_last_seen.inc"
 
 static esp_err_t commit(dhcp_bindings_t *next)
 {
@@ -131,6 +134,10 @@ int dhcp_remembered_snapshot(dhcp_remembered_t *out, int max)
             memcpy(v->mac, r->mac, 6); v->ip = r->ip;
         }
     }
+    for (int i = 0; i < count; ++i) {
+        seen_ram_t *r = seen_slot(out[i].mac, false);
+        out[i].last_seen = r ? r->entry.unix_s : 0;
+    }
     UNLOCK(); return count;
 }
 static bool prepare_ack(const uint8_t mac[6], uint32_t ip)
@@ -174,6 +181,7 @@ bool dhcp_reservations_observe(const uint8_t mac[6], uint32_t ip, bool associate
     /* Observation survives persistence failure in RAM, never masquerades as sticky.
      * OFF only disables automatic persistence, not validated discovery/ARP. */
     if (enabled && !known) (void)prepare_ack(mac, ip);
+    dhcp_last_seen_activity(mac);
     return true;
 }
 void dhcp_reservations_init(void)
@@ -206,6 +214,8 @@ void dhcp_reservations_init(void)
         memset(&s_state, 0, sizeof s_state);
         ESP_LOGE(TAG, "Invalid/unreadable NVS bindings: DHCP allocation disabled; preserve NVS for recovery");
     }
+    seen_load();
+    seen_start();
     dhcps_set_reservation_lookup(dhcp_clients_lookup);
     dhcps_set_address_policy(address_available, prepare_ack);
     BOOT_MARK(s_healthy ? "sticky bindings loaded / validated" : "sticky bindings load FAILED");
@@ -249,7 +259,7 @@ void dhcp_reservations_name(const uint8_t mac[6], char out[DHCP_RESERVATION_NAME
 void dhcp_sticky_status(bool *enabled, int *count, esp_err_t *error)
 {
     LOCK();
-    *enabled = s_state.enabled; *count = 0; *error = s_error;
+    *enabled = s_state.enabled; *count = 0; *error = s_error != ESP_OK ? s_error : s_seen_error;
     for (int i = 0; i < DHCP_STICKY_MAX; ++i) *count += !!s_state.sticky[i].ip;
     UNLOCK();
 }
