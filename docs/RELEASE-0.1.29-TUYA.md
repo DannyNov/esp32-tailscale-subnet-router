@@ -3,8 +3,9 @@
 Integration branch: `integration/0.1.29-tuya`. Merges upstream `v0.1.29`
 into fork main `f15f95734bed5579323ce60cfec53162560820a6` (0.1.28-tuya1).
 This is the base Tuya version on upstream 0.1.29; later fork revisions are
-`0.1.29-tuya1`, `0.1.29-tuya2`, etc. Only Actions artifacts are published;
-main, tags and GitHub Releases remain unchanged pending hardware smoke testing.
+`0.1.29-tuya1`, `0.1.29-tuya2`, etc. This historical integration base is superseded
+by stable public `v0.1.29-tuya1`; see [release notes](RELEASE-0.1.29-TUYA1.md).
+The user hardware smoke-tested that revision after OTA and confirmed Last seen working.
 
 ## Changes and preserved behavior
 
@@ -45,9 +46,8 @@ Text conflicts and resolutions:
 - `CMakeLists.txt`: use exactly `PROJECT_VER=0.1.29-tuya`.
 - `main/web_ui.c`: retain Remembered Clients and BOOT_MARK instrumentation;
   use upstream `reg_uri()` for every handler and set capacity 72.
-- `README.md`: retain fork functionality/install guidance, document this Actions
-  candidate and preserve upstream 0.1.29 status and other upstream edits.
-- `CHANGELOG.md`: retain the complete fork and upstream entries; add this candidate.
+- `README.md`: retain fork functionality/install guidance, document this historical integration and preserve upstream 0.1.29 status and other upstream edits.
+- `CHANGELOG.md`: retain the complete fork and upstream entries; add this integration base.
 
 `main/lwip_route_hook.c` and `main/index.html` merge automatically. Their
 upstream changes are retained alongside the fork's existing code.
@@ -57,7 +57,7 @@ hook fixtures, UI checks, integration contracts, factory tests, a clean ESP32-S3
 build and factory generation/byte verification. The Actions run is the source
 of validation results and exact firmware hashes.
 
-Hardware smoke test before promotion: OTA without erasure; Sticky OFF/ON and
+Extended hardware checklist (not all cases claimed tested): OTA without erasure; Sticky OFF/ON and
 sleeping clients; offline Remembered Clients/Reserve/conflicts; SNMP on/off;
 favicon before login and no handler-registration errors; AP/uplink/tailnet/
 internet traffic with exit node off and with LAN bypass on; down uplink and,

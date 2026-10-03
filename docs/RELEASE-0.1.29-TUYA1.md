@@ -1,9 +1,9 @@
-# 0.1.29-tuya1 — Last seen candidate for ESP32-S3 N16R8
+# 0.1.29-tuya1 — Stable Last seen release for ESP32-S3 N16R8
 
-Branch: `integration/0.1.29-tuya1`, based on candidate
+Branch: `integration/0.1.29-tuya1`, based on integration base
 `0836da5d0f243dcca5acd9101e5479588b54272c` (`0.1.29-tuya`).
-Only an Actions artifact is published. Main, tags, Releases and upstream PRs
-are not changed; hardware smoke testing is required before promotion.
+Stable public release: `v0.1.29-tuya1`, based on upstream `v0.1.29`.
+Hardware smoke-tested by the user after OTA without erase: Remembered Clients works, Last seen shows offline age (6 min ago) and online now for an active Tuya, and previous behavior is preserved. This confirms the reported smoke scenarios, not every acceptance case.
 
 ## Last seen semantics
 
@@ -73,9 +73,9 @@ route-hook hardening, favicon, checked 60 URI registrations/capacity 72,
 Sticky OFF discovery, Sticky ON ownership, Remembered Clients, Reserve,
 conflict protection, Option 145, SNMP, boot_timing and factory/OTA builder.
 
-Hardware smoke: OTA without erase; check saved rows start unknown, observe a
+Extended hardware checklist (not a claim that every case was tested): OTA without erase; check saved rows start unknown, observe a
 sleeping manual client association and passive traffic, check relative/exact
 local time, wait for checkpoint and reboot before NTP, verify the saved date
 survives and pre-sync traffic cannot erase it. Repeat with Sticky OFF and ON,
 Reserve and manual+sticky dedup; verify SNMP, UI/favicon, routing and boot timing
-as described in the base candidate's smoke checklist.
+as described in the base integration's extended checklist.

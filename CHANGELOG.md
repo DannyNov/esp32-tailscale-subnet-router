@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.29-tuya1 — Last seen integration candidate
+## 0.1.29-tuya1 — 2026-10-03 — Stable Last seen release
 
 - Add Last seen to Remembered Clients and numeric Unix-seconds `last_seen` API.
   Confirmed Wi-Fi association and accepted passive AP IPv4 update RAM; stale
@@ -9,8 +9,8 @@
   checked by a minute timer. Preserve timestamps before SNTP, across reboot
   and Sticky OFF; preserve `dhcp_bind_v1` ABI and existing legacy migration.
 - Extend host/UI/integration tests and Actions artifacts for `0.1.29-tuya1`.
-  See [candidate notes](docs/RELEASE-0.1.29-TUYA1.md) for storage details and
-  hardware smoke testing. No main promotion, tag, Release or upstream PR.
+  See [release notes](docs/RELEASE-0.1.29-TUYA1.md) for storage details and
+  validation. Hardware smoke-tested by the user after OTA: Remembered Clients, offline age and online now confirmed working; previous behavior preserved. Published as stable v0.1.29-tuya1.
 
 All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
@@ -20,8 +20,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [0.1.29-tuya] — 2026-10-02
 
-Integration candidate on `integration/0.1.29-tuya`, pending hardware smoke testing.
-No tag or GitHub Release is created. This is the base Tuya version on upstream
+Historical integration base on `integration/0.1.29-tuya`, superseded by the hardware-smoke-tested stable `0.1.29-tuya1` release. This is the base Tuya version on upstream
 0.1.29; later fork revisions use `0.1.29-tuya1`, `0.1.29-tuya2`, etc.
 
 ### Changed
