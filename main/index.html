@@ -4844,16 +4844,30 @@
         btn.onclick = function () { reserveDhcpClient(this.dataset.mac, this.dataset.ip, this.dataset.name); };
       });
     }
+    function formatDhcpLastSeen(unixSeconds, online) {
+      var stamp = Number(unixSeconds);
+      if (!Number.isFinite(stamp) || stamp < 1704067200) return {label: 'unknown', exact: ''};
+      var date = new Date(stamp * 1000);
+      if (!Number.isFinite(date.getTime())) return {label: 'unknown', exact: ''};
+      var seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+      var label = online ? 'online now' : seconds < 60 ? 'just now'
+        : seconds < 3600 ? Math.floor(seconds / 60) + ' min ago'
+        : seconds < 86400 ? Math.floor(seconds / 3600) + ' h ago'
+        : Math.floor(seconds / 86400) + ' d ago';
+      return {label: label, exact: date.toLocaleString()};
+    }
     function renderDhcpRemembered(rows) {
       var body = document.getElementById('dhcp-remembered-body');
       if (!rows.length) {
         body.innerHTML = '<div style="padding:1rem; color:var(--text-muted);">No remembered clients yet.</div>'; return;
       }
-      var html = '<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>MAC</th><th>IP</th><th>Status</th><th>Type</th><th></th></tr></thead><tbody>';
+      var html = '<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>MAC</th><th>IP</th><th>Status</th><th>Last seen</th><th>Type</th><th></th></tr></thead><tbody>';
       rows.forEach(function (r) {
+        var seen = formatDhcpLastSeen(r.last_seen, r.status === 'online');
         html += '<tr><td>' + escapeHtml(r.name || 'unnamed') + '</td>'
           + '<td class="mono">' + escapeHtml(r.mac) + '</td><td class="mono">' + escapeHtml(r.ip) + '</td>'
           + '<td><span class="badge ' + (r.status === 'online' ? 'badge-success' : 'badge-neutral') + '">' + escapeHtml(r.status) + '</span></td>'
+          + '<td title="' + escapeHtml(seen.exact) + '" style="white-space:nowrap;">' + escapeHtml(seen.label) + '</td>'
           + '<td>' + escapeHtml(r.type) + '</td><td style="text-align:right;">'
           + (r.type === 'auto' ? '<button class="btn btn-secondary btn-sm dhcp-reserve-from" data-mac="' + escapeHtml(r.mac) + '" data-ip="' + escapeHtml(r.ip) + '" data-name="' + escapeHtml(r.name || '') + '">Reserve</button>' : '')
           + '</td></tr>';

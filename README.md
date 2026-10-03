@@ -1,5 +1,13 @@
 <div align="center">
 
+
+Last seen candidate: **0.1.29-tuya1** on `integration/0.1.29-tuya1`, based on
+`0836da5d0f243dcca5acd9101e5479588b54272c`. Adds confirmed activity timestamps
+for offline Remembered Clients with browser-local dates and throttled NVS
+checkpoints. OTA requires no erase; DHCP ownership schema is unchanged.
+See [candidate notes/API/storage/smoke test](docs/RELEASE-0.1.29-TUYA1.md).
+Only Actions artifacts are published, pending hardware testing.
+
 <img src="assets/logo/banner.png" alt="Tailscale Subnet Router for ESP32-S3" width="100%">
 
 # ESP32 Tailscale Subnet Router

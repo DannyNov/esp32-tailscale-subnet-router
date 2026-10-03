@@ -37,3 +37,12 @@ assert '.uri = "/api/snmp", .method = HTTP_GET' in web
 assert '.uri = "/api/snmp", .method = HTTP_POST' in web
 assert '.uri = "/api/dhcp/remembered"' in web
 print('PASS: ACL/passive -> SNMP -> Web UI order, URI capacity, single temperature owner, sockets and both subsystems registered')
+
+assert 'dhcp_last_seen_activity(event->mac);' in main
+association = main.split('event_id == WIFI_EVENT_AP_STACONNECTED', 1)[1].split('event_id == WIFI_EVENT_AP_STADISCONNECTED', 1)[0]
+assert association.index('mac_deny_is_blocked(event->mac)') < association.index('dhcp_last_seen_activity(event->mac);')
+remembered = web.split('static esp_err_t dhcp_remembered_handler(', 1)[1].split('static const httpd_uri_t uri_dhcp_remembered', 1)[0]
+assert 'cJSON_AddNumberToObject(entry, "last_seen", (double)r->last_seen);' in remembered
+assert 'dhcp_last_seen_activity(' not in remembered
+assert 'set(PROJECT_VER "0.1.29-tuya1")' in (root / 'CMakeLists.txt').read_text()
+print('PASS: real association wiring, deny filtering, read-only remembered API with Unix seconds, tuya1 version')

@@ -1885,6 +1885,7 @@ static esp_err_t dhcp_remembered_handler(httpd_req_t *req)
         cJSON_AddStringToObject(entry, "name", r->name);
         cJSON_AddStringToObject(entry, "type", r->manual ? "manual" : "auto");
         cJSON_AddStringToObject(entry, "status", online ? "online" : "offline");
+        cJSON_AddNumberToObject(entry, "last_seen", (double)r->last_seen);
         cJSON_AddItemToArray(arr, entry);
     }
     free(rows);

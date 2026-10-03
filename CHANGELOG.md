@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.29-tuya1 — Last seen integration candidate
+
+- Add Last seen to Remembered Clients and numeric Unix-seconds `last_seen` API.
+  Confirmed Wi-Fi association and accepted passive AP IPv4 update RAM; stale
+  ARP/UI state never updates it. Browser formats relative and exact local time.
+- Add bounded optional `dhcp_seen_v1` checkpoints every 20 minutes per MAC,
+  checked by a minute timer. Preserve timestamps before SNTP, across reboot
+  and Sticky OFF; preserve `dhcp_bind_v1` ABI and existing legacy migration.
+- Extend host/UI/integration tests and Actions artifacts for `0.1.29-tuya1`.
+  See [candidate notes](docs/RELEASE-0.1.29-TUYA1.md) for storage details and
+  hardware smoke testing. No main promotion, tag, Release or upstream PR.
+
 All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

@@ -21,6 +21,7 @@ typedef struct {
     uint8_t mac[6]; uint32_t ip;
     char name[DHCP_RESERVATION_NAME_LEN];
     bool manual;
+    uint64_t last_seen; /* Unix seconds; 0 = unknown. */
 } dhcp_remembered_t;
 /* RAM only. Mutations/pruning on TCP/IP; all snapshots use the state mutex. */
 bool dhcp_observation_get(int i, dhcp_observation_t *out);
@@ -31,3 +32,6 @@ uint32_t dhcp_client_resolve(const uint8_t mac[6], uint32_t dhcp_ip, uint32_t ar
 /* Persistent rows only, one per MAC, independent of all runtime network state. */
 int dhcp_remembered_snapshot(dhcp_remembered_t *out, int max);
 void dhcp_observations_set_refresh(void (*refresh)(void));
+
+/* Confirmed association or accepted passive IPv4 only. RAM update, no NVS I/O. */
+void dhcp_last_seen_activity(const uint8_t mac[6]);
