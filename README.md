@@ -1,11 +1,11 @@
 <div align="center">
 
 
-Stable public release: **0.1.30-tuya**, based on upstream `v0.1.30`.
+Stable public release: **0.1.31-tuya**, based on upstream `v0.1.31`.
 Preserves Tuya sleepy-client ownership, Remembered Clients and persisted Last seen.
-OTA requires no erase. User reports the candidate working on hardware;
-extended reconnect/heap and CGNAT acceptance scenarios are not individually claimed tested.
-See [release notes and installation](docs/RELEASE-0.1.30-TUYA.md).
+OTA requires no erase. User confirmed our fork-added functions working on hardware.
+New exit-node/DNS mode and extended reconnect/heap tests are not claimed hardware-tested.
+See [release notes and installation](docs/RELEASE-0.1.31-TUYA.md).
 
 <img src="assets/logo/banner.png" alt="Tailscale Subnet Router for ESP32-S3" width="100%">
 
@@ -28,7 +28,7 @@ See [release notes and installation](docs/RELEASE-0.1.30-TUYA.md).
 
 This is a fork of [Csontikka/esp32-tailscale-subnet-router](https://github.com/Csontikka/esp32-tailscale-subnet-router), with address discovery and persistence improvements for sleeping Tuya and other low-power AP clients. Original authorship and MIT licensing are retained.
 
-**Stable release: `0.1.30-tuya`, based on upstream `v0.1.30`.** Download the [GitHub Release](https://github.com/DannyNov/esp32-tailscale-subnet-router/releases/tag/v0.1.30-tuya). User reports the candidate working on hardware and approved publication. This remains hobby firmware; the complete hardware acceptance matrix has not been verified.
+**Stable release: `0.1.31-tuya`, based on upstream `v0.1.31`.** Download the [GitHub Release](https://github.com/DannyNov/esp32-tailscale-subnet-router/releases/tag/v0.1.31-tuya). User confirmed our fork-added functions working on hardware and approved publication; the new exit-node/DNS mode is not claimed hardware-tested. This remains hobby firmware; the complete hardware acceptance matrix has not been verified.
 
 - Passive discovery uses validated AP Ethernet-source MAC and IPv4-source pairs, even without a new DHCP exchange.
 - Sticky OFF discovers addresses temporarily in RAM without automatic NVS writes. Sticky ON persists ownership and restores it after reboot.
@@ -37,21 +37,21 @@ This is a fork of [Csontikka/esp32-tailscale-subnet-router](https://github.com/C
 
 ### Download and install
 
-Download the assets from the [stable 0.1.30-tuya Release](https://github.com/DannyNov/esp32-tailscale-subnet-router/releases/tag/v0.1.30-tuya):
+Download the assets from the [stable 0.1.31-tuya Release](https://github.com/DannyNov/esp32-tailscale-subnet-router/releases/tag/v0.1.31-tuya):
 
 | File | Use |
 | --- | --- |
-| `firmware-0.1.30-tuya-esp32-s3-ota.bin` | Existing device: upload through Web UI OTA, without erasing NVS. |
-| `firmware-0.1.30-tuya-esp32-s3-factory.bin` | Fresh ESP32-S3 N16R8: full-chip erase, then serial flash at `0x0`. Erase deletes existing settings and identity. |
+| `firmware-0.1.31-tuya-esp32-s3-ota.bin` | Existing device: upload through Web UI OTA, without erasing NVS. |
+| `firmware-0.1.31-tuya-esp32-s3-factory.bin` | Fresh ESP32-S3 N16R8: full-chip erase, then serial flash at `0x0`. Erase deletes existing settings and identity. |
 | `SHA256SUMS.txt` / `factory-manifest.json` | Checksums and verified build blocks/offsets. |
 
-The existing 4 MB partition layout on N16R8 is retained. NVS ownership schema `dhcp_bind_v1` and legacy migration are unchanged; optional `dhcp_seen_v1` stores Last seen. See [installation, behavior and hardware checks](docs/RELEASE-0.1.30-TUYA.md).
+The existing 4 MB partition layout on N16R8 is retained. NVS ownership schema `dhcp_bind_v1` and legacy migration are unchanged; optional `dhcp_seen_v1` stores Last seen. See [installation, behavior and hardware checks](docs/RELEASE-0.1.31-TUYA.md).
 
 **Open limitations:** intermittent long startup remains under investigation; boot timing logs are available. Forget sticky is deferred because sleeping clients may retain an address after server-side deletion. Also see [Known limitations](#known-limitations).
 
 The sections below describe the inherited upstream platform. Screenshots may predate this fork's Tuya additions.
 
-> **Upstream status — early access (`v0.1.30`).** Upstream runs daily on its reference
+> **Upstream status — early access (`v0.1.31`).** Upstream runs daily on its reference
 > ESP32-S3 hardware and the core paths (WiFi NAT, Tailscale subnet
 > routing, DERP fallback, exit nodes, firewall) are exercised
 > continuously. Treat it as a capable hobby build, not a hardened
@@ -159,6 +159,10 @@ traffic you route through it.)*
 - **Tailscale, the real protocol** — DISCO peer discovery, direct paths
   *and* DERP relay fallback, NAT traversal, MagicDNS-aware, exit-node
   client and gateway. Powered by [microlink](https://github.com/Csontikka/microlink).
+- **Exit-node server** — the router can also *offer* its uplink as an exit
+  node to tailnet devices (off by default, IPv4, about 1 Mbit/s), with the
+  DNS service official clients expect. See
+  [Offering the router as an exit node](docs/CONFIGURATION.md#offering-the-router-as-an-exit-node).
 - **Exit-node aware routing** — AP clients' internet traffic can be
   forced through a chosen Tailscale exit node; when the exit node is
   unreachable the firmware **fails closed** (traffic stops) rather than
@@ -223,8 +227,8 @@ Real-world results from the field (see [#9](../../issues/9) and
 > `factory_reset --confirm`, allowing a little extra time before retrying the
 > join. No log survives from the failed first boot, so this is a known rough
 > edge rather than a diagnosed bug. If you hit it, erase the flash and retry.
-> For this fork, follow the [0.1.29-tuya1 clean-install instructions](docs/RELEASE-0.1.30-TUYA.md):
-> erase flash first, then write `firmware-0.1.30-tuya-esp32-s3-factory.bin`
+> For this fork, follow the [0.1.29-tuya1 clean-install instructions](docs/RELEASE-0.1.31-TUYA.md):
+> erase flash first, then write `firmware-0.1.31-tuya-esp32-s3-factory.bin`
 > at `0x0`. The release targets N16R8; the board reports above are inherited
 > upstream experience, not fork validation on every listed board.
 
@@ -491,7 +495,7 @@ This is the *entire* payload — nothing else leaves the device:
 ```json
 {
   "dh": "a1b2c3d4e5f6071839",
-  "v":  "0.1.30",
+  "v":  "0.1.31",
   "bd": "2026-09-16",
   "et": "heartbeat",
   "bc": 276,
@@ -513,7 +517,7 @@ This is the *entire* payload — nothing else leaves the device:
 | Field | Meaning | Example |
 |---|---|---|
 | `dh` | anonymous device ID — 16-hex `SHA-256(WiFi MAC + fixed salt)` plus a 2-hex integrity check (18 hex total). One-way; it can't be turned back into your MAC | `a1b2c3d4e5f6071839` |
-| `v`  | firmware version | `0.1.30` |
+| `v`  | firmware version | `0.1.31` |
 | `bd` | firmware build date | `2026-09-16` |
 | `et` | event type — `boot`, `heartbeat`, or a crash report | `heartbeat` |
 | `bc` | total boot count | `276` |

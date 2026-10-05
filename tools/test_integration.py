@@ -31,7 +31,7 @@ assert 'ap_passive_observe(p, netif);' in hooks
 assert 'ap_passive_init();' in hooks
 assert 'temperature_sensor_install(' not in re.sub(r'/\*.*?\*/', '', web, flags=re.S)
 assert 'if (!snmp_agent_chip_temp_c(&tc)) return -999.0f;' in web
-assert 'CONFIG_LWIP_MAX_SOCKETS=26' in (root / 'sdkconfig.defaults').read_text()
+assert 'CONFIG_LWIP_MAX_SOCKETS=31' in (root / 'sdkconfig.defaults').read_text()
 assert 'snmp_agent' in (root / 'main/CMakeLists.txt').read_text()
 assert '.uri = "/api/snmp", .method = HTTP_GET' in web
 assert '.uri = "/api/snmp", .method = HTTP_POST' in web
@@ -44,5 +44,5 @@ assert association.index('mac_deny_is_blocked(event->mac)') < association.index(
 remembered = web.split('static esp_err_t dhcp_remembered_handler(', 1)[1].split('static const httpd_uri_t uri_dhcp_remembered', 1)[0]
 assert 'cJSON_AddNumberToObject(entry, "last_seen", (double)r->last_seen);' in remembered
 assert 'dhcp_last_seen_activity(' not in remembered
-assert 'set(PROJECT_VER "0.1.30-tuya")' in (root / 'CMakeLists.txt').read_text()
+assert 'set(PROJECT_VER "0.1.31-tuya")' in (root / 'CMakeLists.txt').read_text()
 print('PASS: real association wiring, deny filtering, read-only remembered API with Unix seconds, candidate version')
