@@ -7,7 +7,7 @@ on:
       - fix/tuya-dhcp-renewal
       - integration/0.1.29-tuya
       - integration/0.1.29-tuya1
-      - integration/0.1.30-tuya
+      - integration/0.1.31-tuya
   workflow_dispatch:
 
 permissions:
@@ -33,6 +33,7 @@ jobs:
           python tools/run_host_tests.py
           python tools/run_snmp_tests.py
           python tools/test_routes_0130.py
+          python tools/test_exit_0131.py
 
       - name: Test factory validation and UI
         run: |
@@ -58,10 +59,10 @@ jobs:
       - name: Collect OTA and factory firmware
         run: |
           mkdir -p artifacts
-          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.30-tuya-esp32-s3-ota.bin
-          cp .pio/build/esp32-s3/firmware-factory.bin artifacts/firmware-0.1.30-tuya-esp32-s3-factory.bin
+          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.31-tuya-esp32-s3-ota.bin
+          cp .pio/build/esp32-s3/firmware-factory.bin artifacts/firmware-0.1.31-tuya-esp32-s3-factory.bin
           cp .pio/build/esp32-s3/factory-manifest.json artifacts/
-          cp docs/CANDIDATE-0.1.30-TUYA.md artifacts/README.md
+          cp docs/CANDIDATE-0.1.31-TUYA.md artifacts/README.md
           cd artifacts
           sha256sum *.bin > SHA256SUMS.txt
           cat SHA256SUMS.txt
@@ -69,6 +70,6 @@ jobs:
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
-          name: esp32-s3-0.1.30-tuya
+          name: esp32-s3-0.1.31-tuya
           path: artifacts/
           if-no-files-found: error
