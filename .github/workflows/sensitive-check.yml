@@ -2,7 +2,7 @@ name: Sensitive Data Check
 
 on:
   push:
-    branches: [main]
+    branches: [main, integration/0.1.30-tuya]
   pull_request:
     branches: [main]
 
