@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.31-tuya — 2026-10-06 — Stable upstream integration
+
+- Integrate upstream exit-node offering/peer DNS and PSRAM receive queue fix.
+- Protect peer DNS microlink reads with lifecycle lease during reconnect.
+- Preserve all fork functions; user confirmed them working on hardware and approved publication.
+- New exit-node/DNS mode and extended concurrency/heap scenarios are not claimed hardware-tested in this fork.
+- Publish the exact accepted candidate binaries; see [release notes](docs/RELEASE-0.1.31-TUYA.md).
+
 ## 0.1.30-tuya — 2026-10-05 — Stable upstream integration
 
 - Integrate upstream reconnect instance leak, CGNAT uplink exceptions and supervisor lifecycle/TCP-IP synchronization fixes.
@@ -24,12 +32,6 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
-### 0.1.31-tuya integration candidate
-- Merge upstream exit-node offering, isolated peer DNS service and PSRAM tunnel receive queue fix.
-- Protect new peer DNS microlink reads with lifecycle lease during reconnect.
-- Preserve Tuya/Last seen, SNMP, security tooling and NVS/OTA compatibility.
-- Hardware validation pending; stable remains v0.1.30-tuya.
 
 ## [0.1.31] — 2026-10-05
 

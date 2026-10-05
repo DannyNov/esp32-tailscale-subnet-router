@@ -1,6 +1,6 @@
 # 0.1.31-tuya — ESP32-S3 N16R8 integration candidate
 
-Hardware smoke test pending. Stable release remains v0.1.30-tuya.
+Published as stable v0.1.31-tuya after the user confirmed our fork-added functions working and approved publication on 2026-10-06. New exit-node/DNS mode and extended concurrency/heap scenarios remain unverified on fork hardware.
 Base main: f35a8854efd9118d1a2dce3ced1f8ffd20d9f827.
 Upstream v0.1.31: b053e0bdf3f7d3b6c274bb28d5c93d7b9ceecd92.
 Microlink: 17a8c9c0b9f6d7871fd1430f800383c87b99caa2.
@@ -50,4 +50,4 @@ client: verify egress IP, DNS/site loads, UI responsiveness during parallel DNS,
 and rejection of uplink/AP DNS callers. Verify the port is closed after OFF plus
 restart, incompatible exit selection is refused, and repeated reconnect during
 DNS use cannot crash. Recheck CGNAT exceptions, peer /32 priority and AP routes.
-Do not merge main or publish release/tag until user hardware acceptance.
+User hardware acceptance for our fork functions and publication authorization received. The extended checklist remains a list of scenarios, not a claim that all were hardware-tested.
