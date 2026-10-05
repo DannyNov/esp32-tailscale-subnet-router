@@ -1,11 +1,13 @@
-# 0.1.30-tuya — integration candidate, hardware pending
+# 0.1.30-tuya — integration audit
+
+Published as stable after the user reported the candidate working and approved publication. The extended checklist below remains a list of scenarios, not a claim that each was hardware-tested.
 
 Branch: `integration/0.1.30-tuya`. Base fork main:
 `4bdcf211121279240a22f35ecddb38d367ba2372`.
 Upstream lightweight tag v0.1.30 and target commit:
 `e41e676a93b80c85fa6321c6707866ff72852312`.
 Microlink: `50d4f12498f6f9343b224aa61e565ce6f4b38e5c`.
-Stable public release remains `v0.1.29-tuya1`.
+Stable public release: `v0.1.30-tuya`.
 
 ## Code audit before build
 
@@ -67,4 +69,4 @@ configuration), check on-link gateway, DNS and DHCP server access plus peer /32
 priority when the uplink prefix covers peer IPs; compare route API and real
 packet behavior. No local host test proves those device scenarios.
 
-Do not merge main or create a release/tag until user hardware smoke acceptance.
+User hardware smoke acceptance and publication authorization received on 2026-10-05.

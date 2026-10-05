@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.30-tuya — 2026-10-05 — Stable upstream integration
+
+- Integrate upstream reconnect instance leak, CGNAT uplink exceptions and supervisor lifecycle/TCP-IP synchronization fixes.
+- Preserve all Tuya/Remembered Clients/Last seen/SNMP behavior and SSH host-key security fix.
+- User reports the candidate working on hardware and approved publication. Extended heap/reconnect and CGNAT scenarios are not individually claimed tested.
+- Publish the exact tested candidate OTA/factory images; see [release notes](docs/RELEASE-0.1.30-TUYA.md).
+
 ## 0.1.29-tuya1 — 2026-10-03 — Stable Last seen release
 
 - Add Last seen to Remembered Clients and numeric Unix-seconds `last_seen` API.
@@ -17,11 +24,6 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
-### 0.1.30-tuya integration candidate
-- Merge upstream v0.1.30 including microlink reconnect teardown, CGNAT exceptions and supervisor lifecycle/TCP-IP synchronization.
-- Preserve fork boot marker inside the lifecycle lease, Tuya ownership/passive learning, remembered clients, Last seen, SNMP and SSH host-key validation.
-- Hardware smoke test pending; stable release remains v0.1.29-tuya1.
 
 ## [0.1.30] — 2026-10-05
 
