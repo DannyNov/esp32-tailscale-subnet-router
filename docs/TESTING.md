@@ -37,11 +37,71 @@ Everything is env-var driven so no IPs or credentials get committed.
 | `DK_SUBNET_TARGET` | a host inside the LAN advertised by `DK_HOST`              | `192.0.2.250`    |
 | `EXIT_NODE_IP`     | (optional) tailnet IP to use as exit node in stage B       | `100.x.x.x`      |
 | `TEST_QUICK`       | `1` skips the slow exit-node stage of the routing module   | `0`              |
+| `SSH_KNOWN_HOSTS`  | optional additional OpenSSH known_hosts file (both Pi and diagnostic node) | `$HOME/.ssh/test_known_hosts` |
 
 Drop those into a local `.env` (gitignored) and source it before running:
 
 ```bash
 set -a; source .env; set +a
+```
+
+## SSH host-key trust
+
+The shared SSH client used by `pi`, `dns_relay`, and `routing` loads
+`~/.ssh/known_hosts` through Paramiko's `load_system_host_keys()` and uses
+`RejectPolicy()`. If `SSH_KNOWN_HOSTS` is non-empty, it also loads that
+OpenSSH-format file (with `~` expanded). This is an additional trust store;
+an existing entry in the default file takes precedence for the same host.
+Set an explicit absolute path on Windows or in CI if needed.
+
+Unknown keys are rejected before authentication. A changed known key raises
+`BadHostKeyException`; keys are never added or saved automatically. An
+explicit file that is missing or unreadable, or causes a Paramiko parsing
+error, fails the connection setup. Entries ignored by Paramiko do not
+establish trust; an otherwise unknown host is still rejected.
+Password and SSH-agent/private-key authentication remain available after
+the host key is verified.
+
+Prepare trust for **both** the exact `PI_HOST` and `DK_HOST` names/IPs used
+by the runner (SSH port 22). A key trusted under a different hostname or
+address does not automatically trust a new address.
+
+1. Using the device's local console or another independently trusted
+   administrative channel, obtain the host public-key fingerprint, e.g.:
+   `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`.
+2. Collect a candidate key on the test runner. `ssh-keyscan` alone does
+   **not** authenticate the server:
+
+   ```bash
+   candidate=$(mktemp)
+   ssh-keyscan -T 5 -t ed25519 "$PI_HOST" > "$candidate"
+   ssh-keygen -lf "$candidate" -E sha256
+   ```
+
+3. Manually compare the full SHA256 fingerprint with the independently
+   obtained fingerprint. Only if it matches, append the verified candidate
+   to a local trust file outside the repository:
+
+   ```bash
+   mkdir -p "$HOME/.ssh"
+   chmod 700 "$HOME/.ssh"
+   cat "$candidate" >> "$HOME/.ssh/test_known_hosts"
+   chmod 600 "$HOME/.ssh/test_known_hosts"
+   rm "$candidate"
+   export SSH_KNOWN_HOSTS="$HOME/.ssh/test_known_hosts"
+   ```
+
+Repeat for `DK_HOST`, choosing a host-key type the server supports and
+checking that type's fingerprint. Alternatively, add verified entries to
+the default `~/.ssh/known_hosts`. Keep trust files, private keys and
+credentials outside the repository. If a device is reinstalled or its key
+changes, independently verify the new fingerprint before replacing the
+old entry in every applicable trust file; do not bypass verification.
+
+Offline host-key regression tests (Paramiko required; no devices needed):
+
+```bash
+python -m unittest discover -s tools -p test_ssh_host_keys.py -v
 ```
 
 ## Running

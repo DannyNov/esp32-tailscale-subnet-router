@@ -148,13 +148,25 @@ class SshClient:
         if paramiko is None:
             raise RuntimeError("paramiko not installed (`pip install paramiko`)")
         self.c = paramiko.SSHClient()
-        self.c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self.c.set_missing_host_key_policy(paramiko.RejectPolicy())
+        try:
+            self.c.load_system_host_keys()
+            known_hosts = os.environ.get("SSH_KNOWN_HOSTS")
+            if known_hosts:
+                self.c.load_host_keys(os.path.expanduser(known_hosts))
+        except Exception:
+            self.c.close()
+            raise
         kw: dict = {"username": user, "timeout": timeout, "look_for_keys": True, "allow_agent": True}
         if password:
             kw.update(password=password, look_for_keys=False, allow_agent=False)
         if key:
             kw.update(key_filename=key)
-        self.c.connect(host, **kw)
+        try:
+            self.c.connect(host, **kw)
+        except Exception:
+            self.c.close()
+            raise
         self._password = password
 
     def run(self, cmd: str, sudo: bool = False, timeout: int = 20) -> tuple[int, str, str]:
