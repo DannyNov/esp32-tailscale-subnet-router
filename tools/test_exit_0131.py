@@ -30,7 +30,7 @@ source = '''#include <stdbool.h>
 #include <assert.h>
 #include <stdio.h>
 #define PEER_DNS_MAX_MESSAGE 4096
-#define PEER_DNS_MAX_B64 5462
+#define PEER_DNS_MAX_B64 (((PEER_DNS_MAX_MESSAGE + 2U) / 3U) * 4U)
 int tailscale_enabled, tailscale_advertise_exit_node;
 uint32_t tailscale_exit_node_ip;
 '''
