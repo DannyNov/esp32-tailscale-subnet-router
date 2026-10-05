@@ -2,8 +2,8 @@
 
 Branch: `integration/0.1.30-tuya`. Base fork main:
 `4bdcf211121279240a22f35ecddb38d367ba2372`.
-Upstream annotated tag v0.1.30: `e41e676a93b80c85fa6321c6707866ff72852312`;
-target commit: `16b83a101a7f6c7c2f0a8832e3c735aeaa22e0a7`.
+Upstream lightweight tag v0.1.30 and target commit:
+`e41e676a93b80c85fa6321c6707866ff72852312`.
 Microlink: `50d4f12498f6f9343b224aa61e565ce6f4b38e5c`.
 Stable public release remains `v0.1.29-tuya1`.
 
