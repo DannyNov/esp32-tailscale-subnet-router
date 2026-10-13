@@ -1,0 +1,28 @@
+#pragma once
+#include <stdint.h>
+#include <stddef.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "esp_timer.h"
+
+enum { D_DIRECT, D_DERP, D_PATHS };
+enum { D_RX, D_BYTES, D_ENQUEUE, D_DROP, D_DEQUEUE, D_TX, D_TX_ERROR,
+       D_TX_EVICT, D_READ_ERROR, D_DECRYPT_OK, D_DECRYPT_ERROR,
+       D_FORWARD_OK, D_FORWARD_ERROR, D_REPLAY, D_POLICY_DROP,
+       D_TX_ENQUEUE, D_TX_DROP, D_INIT, D_RESPONSE, D_COOKIE, D_DATA,
+       D_OTHER, D_METRICS };
+enum { D_PROCESS, D_PERIODIC, D_PROBES, D_LOOP, D_TIMERS };
+void wg_diag_add(unsigned path, unsigned metric, uint32_t value);
+void wg_diag_type(unsigned path, const uint8_t *data, size_t len);
+void wg_diag_stack_sample(void);
+void wg_diag_alloc_fail(unsigned site);
+void wg_diag_time(unsigned timer, uint32_t us);
+void wg_diag_source(unsigned path, const uint8_t key[32], uint32_t ip,
+                    uint16_t port, size_t bytes, int accepted);
+void wg_diag_peer(unsigned peer, int decrypt_ok);
+void wg_diag_sample_queue(unsigned q, QueueHandle_t queue);
+void wg_diag_start(void);
+void wg_diag_report(void);
+/* GNU C: evaluates the original allocation once and preserves its type. */
+#define D_ALLOC(site, expression) ({ __auto_type d_result = (expression); \
+    if (!d_result) { wg_diag_alloc_fail(site); } d_result; })

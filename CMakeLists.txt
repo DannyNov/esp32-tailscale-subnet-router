@@ -12,16 +12,25 @@ cmake_minimum_required(VERSION 3.16)
 # Developer Mode is on, so we point ESP-IDF at the real paths instead
 # and ignore the symlink. Doing it this way keeps the project building
 # on a fresh Windows clone without any setup ritual.
+# Generate an instrumented copy; the pinned submodule is never modified.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(_diag_components "${CMAKE_BINARY_DIR}/diagnostic-components")
+execute_process(COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_LIST_DIR}/tools/prepare_wg_diagnostics.py"
+    --output "${_diag_components}" RESULT_VARIABLE _diag_result)
+if(NOT _diag_result EQUAL 0)
+    message(FATAL_ERROR "Pinned diagnostic overlay preparation failed")
+endif()
 set(EXTRA_COMPONENT_DIRS
-    external/microlink/components/microlink
-    external/microlink/components/microlink/components/wireguard_lwip
+    "${_diag_components}/microlink"
+    "${_diag_components}/microlink/components/wireguard_lwip"
 )
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 # PROJECT_VER lands in the esp_app_desc_t struct so the running firmware
 # can report its version via the OTA APIs and the web UI's Status page.
-set(PROJECT_VER "0.1.33-tuya")
+set(PROJECT_VER "0.1.33-tuya-wgdiag1")
 
 project(esp32_tsr)
 
