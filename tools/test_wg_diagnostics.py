@@ -42,6 +42,18 @@ with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='diag-test-') as tem
             if f.read_bytes() != (out / 'microlink' / rel).read_bytes():
                 changed.add(rel.as_posix())
     assert changed == allowed, changed
+    mgr = (out / 'microlink/src/ml_wg_mgr.c').read_text()
+    task = mgr[mgr.index('void ml_wg_mgr_task('):]
+    assert 'dump_wg_state_snapshot(ml);' not in task
+    assert 'wg_diag_stack_sample();' in task
+    assert task.count('vTaskDelay(pdMS_TO_TICKS(10));') == 1
+    assert task.count('process_wg_packet(ml, &wg_pkt);') == 2
+    assert 'WG_MGR_WG_BUDGET_MS     30' in task
+    assert 'WG_MGR_WG_BURST         64' in task
+    derp = (out / 'microlink/src/ml_derp.c').read_text()
+    assert 'derp_poll_header(ml, header)' in derp
+    assert 'return n == 0 ? -1 : n;' in derp
+    print('PASS: no snapshot call in consumer; stack/queue/counter probes and yield retained; derphdr1 retained')
     print('PASS: pinned immutable submodule, reproducible overlay, fail-closed anchors, allocation coverage')
     cc = shutil.which(os.environ.get('CC', 'cc'))
     if not cc:

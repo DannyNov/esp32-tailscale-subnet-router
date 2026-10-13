@@ -10,6 +10,7 @@ import json
 import re
 import shutil
 import subprocess
+from derp_header_overlay import apply as apply_derp_header
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = '2c796e3b14872b94fb2c54102affaacb1cc4a77b'
@@ -116,7 +117,7 @@ def prepare(out):
         wg_diag_time(D_LOOP, (uint32_t)(esp_timer_get_time() - d_loop_start));
         vTaskDelay(pdMS_TO_TICKS(10));''')
             text = replace(text, '            dump_wg_state_snapshot(ml);',
-                           '            wg_diag_stack_sample();\n            dump_wg_state_snapshot(ml);')
+                           '            wg_diag_stack_sample();\n            /* WG_SNAP disabled in diagnostic overlay: synchronous UART stalls RX. */')
         else:
             # Results below occur after WG peer lookup/decrypt, unlike the
             # pre-authenticated DERP source labels and UDP endpoints.
@@ -131,11 +132,13 @@ def prepare(out):
             text = replace(text, 'WG_DEBUG("[WG_RX_IP] DROPPED: dest_ok=false\\n");',
                            'wg_diag_add(wg_diag_rx_path(), D_POLICY_DROP, 1);\n\t\t\t\t\t\t\t\t\tWG_DEBUG("[WG_RX_IP] DROPPED: dest_ok=false\\n");')
         text = text.replace('wg_diag_rx_path()', '(ip_addr_isany(addr) ? D_DERP : D_DIRECT)')
+        if rel == 'src/ml_derp.c':
+            text = apply_derp_header(text)
         f.write_text(text)
     if len(sites) > 64:
         raise RuntimeError('Allocation site table exceeded')
     (out / 'allocation-sites.json').write_text(json.dumps(sites, indent=2) + '\n')
-    (out / 'overlay-provenance.json').write_text(json.dumps({'microlink': PIN, 'source_sha256': hashes}, indent=2) + '\n')
+    (out / 'overlay-provenance.json').write_text(json.dumps({'microlink': PIN, 'source_sha256': hashes, 'snapshot_policy': 'disabled-in-wg-consumer', 'derp_header_overlay': 'derphdr1'}, indent=2) + '\n')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
