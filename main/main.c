@@ -954,6 +954,18 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_wifi_start() );
     BOOT_MARK("Wi-Fi start returned");
 
+    /* Preserve the IDF modem-sleep default unless NVS wifi_ps is 0.
+     * Disabling power save may reduce latency at higher current consumption.
+     * Throughput and latency on this device require hardware measurements. */
+    {
+        uint8_t ps = 1;
+        nvs_param_get_u8("wifi_ps", &ps);
+        if (ps == 0) {
+            esp_wifi_set_ps(WIFI_PS_NONE);
+            ESP_LOGI("main", "WiFi power save off (NVS wifi_ps=0)");
+        }
+    }
+
     /* Optional TX-power override. NVS "tx_pwr" is a u8 in 0.25 dBm
      * steps (matches esp_wifi_set_max_tx_power): valid range is 8..84
      * (≈ 2..21 dBm). 0/unset means leave the IDF default in place. */
