@@ -51,7 +51,7 @@ The existing 4 MB partition layout on N16R8 is retained. NVS ownership schema `d
 
 The sections below describe the inherited upstream platform. Screenshots may predate this fork's Tuya additions.
 
-> **Upstream status — early access (`v0.1.31`).** Upstream runs daily on its reference
+> **Upstream status — early access (`v0.1.32`).** Upstream runs daily on its reference
 > ESP32-S3 hardware and the core paths (WiFi NAT, Tailscale subnet
 > routing, DERP fallback, exit nodes, firewall) are exercised
 > continuously. Treat it as a capable hobby build, not a hardened
@@ -160,7 +160,8 @@ traffic you route through it.)*
   *and* DERP relay fallback, NAT traversal, MagicDNS-aware, exit-node
   client and gateway. Powered by [microlink](https://github.com/Csontikka/microlink).
 - **Exit-node server** — the router can also *offer* its uplink as an exit
-  node to tailnet devices (off by default, IPv4, about 1 Mbit/s), with the
+  node to tailnet devices (off by default, IPv4, roughly 1–6 Mbit/s depending
+  on the link), with the
   DNS service official clients expect. See
   [Offering the router as an exit node](docs/CONFIGURATION.md#offering-the-router-as-an-exit-node).
 - **Exit-node aware routing** — AP clients' internet traffic can be
@@ -495,7 +496,7 @@ This is the *entire* payload — nothing else leaves the device:
 ```json
 {
   "dh": "a1b2c3d4e5f6071839",
-  "v":  "0.1.31",
+  "v":  "0.1.32",
   "bd": "2026-09-16",
   "et": "heartbeat",
   "bc": 276,
@@ -517,7 +518,7 @@ This is the *entire* payload — nothing else leaves the device:
 | Field | Meaning | Example |
 |---|---|---|
 | `dh` | anonymous device ID — 16-hex `SHA-256(WiFi MAC + fixed salt)` plus a 2-hex integrity check (18 hex total). One-way; it can't be turned back into your MAC | `a1b2c3d4e5f6071839` |
-| `v`  | firmware version | `0.1.31` |
+| `v`  | firmware version | `0.1.32` |
 | `bd` | firmware build date | `2026-09-16` |
 | `et` | event type — `boot`, `heartbeat`, or a crash report | `heartbeat` |
 | `bc` | total boot count | `276` |

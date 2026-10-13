@@ -33,8 +33,9 @@ source = '''#include <stdbool.h>
 #define PEER_DNS_MAX_B64 (((PEER_DNS_MAX_MESSAGE + 2U) / 3U) * 4U)
 int tailscale_enabled, tailscale_advertise_exit_node;
 uint32_t tailscale_exit_node_ip;
+const char *tailscale_advertise_routes;
 '''
-source += '\n'.join(extract(manager, n) for n in ['tailscale_exit_server_active', 'routes_append_unique'])
+source += '\n'.join(extract(manager, n) for n in ['manual_routes_offer_exit', 'tailscale_exit_server_active', 'routes_append_unique'])
 source += '\n' + '\n'.join(extract(dns, n) for n in ['dns_query_valid', 'base64url_value', 'decode_base64url'])
 source += r'''
 int main(void) {
@@ -43,6 +44,13 @@ int main(void) {
  tailscale_advertise_exit_node=1; assert(tailscale_exit_server_active());
  tailscale_exit_node_ip=1;assert(!tailscale_exit_server_active());
  tailscale_exit_node_ip=0;tailscale_enabled=0;assert(!tailscale_exit_server_active());
+ tailscale_enabled=1;tailscale_advertise_exit_node=0;
+ const char *valid[]={"0.0.0.0/0"," \t0.0.0.0/0\t ","10.0.0.0/24\r\n0.0.0.0/0\r\n"};
+ for(size_t i=0;i<sizeof(valid)/sizeof(valid[0]);i++){tailscale_advertise_routes=valid[i];assert(tailscale_exit_server_active());}
+ const char *invalid[]={NULL,"","::/0","0.0.0.0/00","10.0.0.0/24","0.0.0.0/0junk"};
+ for(size_t i=0;i<sizeof(invalid)/sizeof(invalid[0]);i++){tailscale_advertise_routes=invalid[i];assert(!tailscale_exit_server_active());}
+ tailscale_advertise_routes="0.0.0.0/0";tailscale_enabled=0;assert(!tailscale_exit_server_active());
+ tailscale_enabled=1;tailscale_exit_node_ip=1;assert(!tailscale_exit_server_active());
  char routes[80]="10.71.0.0/24";
  size_t n=strlen(routes);n=routes_append_unique(routes,sizeof(routes),n,"0.0.0.0/0");
  n=routes_append_unique(routes,sizeof(routes),n,"::/0");
