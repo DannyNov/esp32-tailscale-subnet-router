@@ -137,6 +137,7 @@ def prepare(out):
     # keepalives. Carry the RX path explicitly: no shared/thread-local state.
     for name in ('wireguard.c', 'wireguard.h'):
         f = backend / 'src' / name
+        hashes['components/wireguard_lwip/src/' + name] = hashlib.sha256(f.read_bytes()).hexdigest()
         text = f.read_text()
         text = replace(text, 'wireguard_decrypt_packet(uint8_t *dst, const uint8_t *src, size_t src_len, uint64_t counter, struct wireguard_keypair *keypair)',
                        'wireguard_decrypt_packet_diag(uint8_t *dst, const uint8_t *src, size_t src_len, uint64_t counter, struct wireguard_keypair *keypair, unsigned diag_path)')

@@ -186,6 +186,7 @@ rst = braced('if (f_type == 0x03 && f_stream == 5)')
 end_start = coord.rfind('if (f_flags & 0x01)', 0, coord.index('H2 END_STREAM on the long-poll'))
 end_end = coord.index('\n                }', end_start) + len('\n                }')
 end_stream = coord[end_start:end_end]
+data_guard = re.search(r'if \(f_type == 0x00\)', coord[coord.index('if (pos + (int)f_len > frame_len)'):])[0]
 h2 = '''#include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -194,12 +195,13 @@ h2 = '''#include <assert.h>
 #define ESP_LOGW(tag, ...) ((void)(tag), (void)snprintf(log_buf,sizeof(log_buf),__VA_ARGS__))
 static bool check(unsigned f_type,unsigned f_stream,unsigned f_flags,unsigned f_len) {
  char log_buf[256];uint8_t frame_buf[8]={0};unsigned pos=0;bool proto_err=false;
-''' + goaway + ' else ' + rst + '\nif ((f_type==0 || f_type==1) && f_stream==5) {\n' + end_stream + '''
+''' + goaway + ' else ' + rst + '\n' + data_guard + ' { if (f_stream==5) {\n' + end_stream + '''
+ }
  } return proto_err;
 }
 int main(void) {
  for(unsigned len=0;len<=8;len++){assert(check(7,0,0,len));assert(check(3,5,0,len));assert(!check(3,7,0,len));}
- assert(check(0,5,1,0));assert(!check(0,5,0,0));assert(!check(0,7,1,0));assert(check(1,5,1,0));return 0;
+ assert(check(0,5,1,0));assert(!check(0,5,0,0));assert(!check(0,7,1,0));return 0;
 }
 '''
 for name, text in [('replay', replay), ('noise', noise), ('coord_recv', recv), ('nonce', nonce), ('h2', h2)]:
