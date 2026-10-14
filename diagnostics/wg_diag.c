@@ -161,7 +161,7 @@ static void wg4_report(void) {
         (unsigned long)(delta_n[D_TX_SEND] ? delta_sum[D_TX_SEND] / delta_n[D_TX_SEND] : 0),
         (unsigned long)(delta_n[D_TX_LOCK] ? delta_sum[D_TX_LOCK] / delta_n[D_TX_LOCK] : 0));
     ESP_LOGW("WG4_RX",
-        "t_ms=%llu direct_rx=%lu derp_rx=%lu direct_drop=%lu derp_drop=%lu wgq_depth=%lu wgq_peak=%lu rx_wait_avg_us=%lu periodic_avg_us=%lu probes_avg_us=%lu internal_free=%u",
+        "t_ms=%llu direct_rx=%lu derp_rx=%lu direct_drop=%lu derp_drop=%lu wgq_depth=%lu wgq_peak=%lu wgq_cap=64 rx_wait_avg_us=%lu periodic_avg_us=%lu probes_avg_us=%lu internal_free=%u",
         t_ms,
         (unsigned long)delta_rx[D_DIRECT], (unsigned long)delta_rx[D_DERP],
         (unsigned long)delta_drop[D_DIRECT], (unsigned long)delta_drop[D_DERP],
