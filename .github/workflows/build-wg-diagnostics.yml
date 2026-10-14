@@ -1,7 +1,7 @@
-name: Build WG RX scheduling and TX timing diagnostics (no deployment)
+name: Build WG handshake/RX/TX stage diagnostics (no deployment)
 on:
   push:
-    branches: [diagnostic/wg-rx-scheduler-v0135-g3]
+    branches: [diagnostic/wg-handshake-stage-v0135-g4]
   workflow_dispatch:
 permissions:
   contents: read
@@ -40,10 +40,10 @@ jobs:
       - name: Validate image and collect provenance
         run: |
           mkdir -p artifacts
-          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgdiag3-esp32-s3-ota.bin
+          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgdiag4-esp32-s3-ota.bin
           cp .pio/build/esp32-s3/diagnostic-components/*.json artifacts/
           cp sdkconfig.esp32-s3 artifacts/sdkconfig-built.txt
-          cp docs/WG-RX-TX-EXPERIMENT-RU.md artifacts/README.md
+          cp docs/WG-HANDSHAKE-STAGES-RU.md artifacts/README.md
           python tools/validate_snapshot_image.py
           python tools/diagnostic_provenance.py
           pio pkg list -e esp32-s3 > artifacts/build-dependencies.txt
@@ -51,6 +51,6 @@ jobs:
           sha256sum *.bin > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: esp32-s3-0.1.35-tuya-wgdiag3
+          name: esp32-s3-0.1.35-tuya-wgdiag4
           path: artifacts/
           if-no-files-found: error

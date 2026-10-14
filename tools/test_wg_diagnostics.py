@@ -62,6 +62,16 @@ with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='diag-test-') as tem
     assert 'wg_diag_time(D_TX_CRYPTO,' in wgif
     assert 'wg_diag_time(D_TX_LOCK,' in wgif
     assert 'wg_diag_time(D_TX_SEND,' in wgif
+    for timer in ('D_TX_PBUF', 'D_TX_COPY', 'D_RX_DEC_PBUF', 'D_RX_DECRYPT', 'D_RX_LWIP'):
+        assert 'wg_diag_time(' + timer + ',' in wgif, timer
+    for timer in ('D_RX_PBUF', 'D_RX_COPY', 'D_RX_HS', 'D_RX_DATA'):
+        assert timer in mgr, timer
+    assert mgr.count('d_wg_type >= 1 && d_wg_type <= 3') == 2
+    assert 'ESP_LOGD(TAG, "WG send-both: handshake' in mgr
+    assert 'ESP_LOGD(TAG, "WG-RX(direct) queue full' in (out / 'microlink/src/ml_net_io.c').read_text()
+    assert 'ESP_LOGW(TAG, "[WG_RX] Handshake INITIATION' not in wgif
+    assert 'ESP_LOGW(TAG, "[WG_RX] Initiation MAC check FAILED' in wgif
+    assert 'ESP_LOGW(TAG, "[WG] Handshake response INVALID' in wgif
     assert 'ESP_LOGW(TAG, "[WG_OUT_FAIL]' not in wgif
     derp = (out / 'microlink/src/ml_derp.c').read_text()
     assert 'derp_poll_header(ml, header)' in derp
@@ -170,7 +180,9 @@ int main(void) {
     wg_diag_time(D_WAIT,31000);
     assert(times[D_DRAIN_GAP].max==50000 && times[D_LOOP_GAP].max==40000);
     assert(times[D_WAIT].slow==1);
-    wg_diag_peer_tx_bytes(2, 1312); assert(peer_tx_wire_bytes[2] == 1312);\n    wg_diag_wake(1); wg_diag_wake(0); assert(wake_counts[0] == 1 && wake_counts[1] == 1);\n    wg_diag_time(D_TX_CRYPTO, 1000); assert(times[D_TX_CRYPTO].sum == 1000);\n    wg_diag_start(); wg_diag_report(); wg_diag_report();
+    wg_diag_peer_tx_bytes(2, 1312); assert(peer_tx_wire_bytes[2] == 1312);\n    wg_diag_wake(1); wg_diag_wake(0); assert(wake_counts[0] == 1 && wake_counts[1] == 1);\n    wg_diag_time(D_TX_CRYPTO, 1000); assert(times[D_TX_CRYPTO].sum == 1000);
+    wg_diag_time(D_RX_DECRYPT, 850); wg_diag_time(D_RX_HS, 123000);
+    assert(times[D_RX_DECRYPT].sum == 850 && times[D_RX_HS].max == 123000);\n    wg_diag_start(); wg_diag_report(); wg_diag_report();
     puts("PASS: concurrent counters, source isolation/overflow, allocation once, HWM, peer slots, wraparound");
     return 0;
 }

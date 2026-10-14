@@ -11,7 +11,9 @@ enum { D_RX, D_BYTES, D_ENQUEUE, D_DROP, D_DEQUEUE, D_TX, D_TX_ERROR,
        D_FORWARD_OK, D_FORWARD_ERROR, D_REPLAY, D_POLICY_DROP,
        D_TX_ENQUEUE, D_TX_DROP, D_INIT, D_RESPONSE, D_COOKIE, D_DATA,
        D_OTHER, D_METRICS };
-enum { D_PROCESS, D_PERIODIC, D_PROBES, D_LOOP, D_WAIT, D_DRAIN_GAP, D_LOOP_GAP, D_TX_LOCK, D_TX_CRYPTO, D_TX_SEND, D_TIMERS };
+enum { D_PROCESS, D_PERIODIC, D_PROBES, D_LOOP, D_WAIT, D_DRAIN_GAP, D_LOOP_GAP, D_TX_LOCK, D_TX_CRYPTO, D_TX_SEND,
+       D_TX_PBUF, D_TX_COPY, D_RX_PBUF, D_RX_COPY, D_RX_DEC_PBUF,
+       D_RX_DECRYPT, D_RX_LWIP, D_RX_HS, D_RX_DATA, D_TIMERS };
 void wg_diag_tx(unsigned stage, int err);
 void wg_diag_burst(int accepted, int64_t now);
 void wg_diag_drain(int64_t now);

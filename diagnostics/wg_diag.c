@@ -24,7 +24,9 @@ static const char *const names[D_METRICS] = {
     "rx", "bytes", "enq", "drop", "deq", "tx", "tx_err", "tx_evict",
     "read_err", "decrypt_ok", "decrypt_err", "forward_ok", "forward_err",
     "replay", "policy_drop", "tx_enq", "tx_drop", "init", "response", "cookie", "data", "other" };
-static const char *const timers[D_TIMERS] = {"process", "periodic", "probes", "loop", "rx_wait", "drain_gap", "loop_gap", "tx_lock", "tx_crypto", "tx_send"};
+static const char *const timers[D_TIMERS] = {"process", "periodic", "probes", "loop", "rx_wait", "drain_gap", "loop_gap", "tx_lock", "tx_crypto", "tx_send",
+    "tx_pbuf", "tx_copy", "rx_pbuf", "rx_copy", "rx_dec_pbuf",
+    "rx_decrypt", "rx_lwip", "rx_handshake", "rx_data"};
 /* Raw lwIP errors -16..0 plus overflow; bounded storage, no packet logs. */
 static uint32_t txstage[4][18], burst_events, burst_max, burst_run;
 static int64_t burst_last, drain_last, loop_last;
