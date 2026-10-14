@@ -14,6 +14,7 @@ from derp_header_overlay import apply as apply_derp_header
 from pressure_overlay import apply as apply_pressure
 from rx_tx_overlay import apply as apply_rx_tx
 from wg4_overlay import apply as apply_wg4
+from wgopt1_overlay import apply as apply_wgopt1
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = 'eb63b97073e529d57bc9c1deaeea25ac304034e5'
@@ -157,6 +158,7 @@ def prepare(out):
     apply_pressure(component)
     apply_rx_tx(component)
     apply_wg4(component)
+    apply_wgopt1(component)
     if len(sites) > 64:
         raise RuntimeError('Allocation site table exceeded')
     (out / 'allocation-sites.json').write_text(json.dumps(sites, indent=2) + '\n')
