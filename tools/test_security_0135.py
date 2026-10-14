@@ -128,6 +128,7 @@ nonce = '''#include <assert.h>
 /* wgdiag3 timings are observational; host nonce test mocks them. */
 #define D_TX_LOCK 7
 #define D_TX_CRYPTO 8
+#define D_TX_COPY 10
 static int64_t esp_timer_get_time(void) { return 1234; }
 static void wg_diag_time(unsigned t, uint32_t us) { (void)t; (void)us; }
 #ifdef CONCURRENT
