@@ -132,6 +132,8 @@ static inline unsigned heap_caps_get_largest_free_block(unsigned c) { (void)c; r
 ''')
         test = out / 'test.c'
         test.write_text('''#include <assert.h>
+/* Separate ESP-IDF telemetry module is host-tested by test_wgopt5.py. */
+void wg5_report(void) {}
 #include "wg_diag.c"
 static void *worker(void *arg) {
     (void)arg;

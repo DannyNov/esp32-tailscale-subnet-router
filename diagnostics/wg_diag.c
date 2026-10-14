@@ -178,6 +178,7 @@ static void reporter(void *arg) {
         vTaskDelay(pdMS_TO_TICKS(10000));
         wg_diag_report();
         wg4_report();
+        wg5_report();
     }
 }
 void wg_diag_start(void) {

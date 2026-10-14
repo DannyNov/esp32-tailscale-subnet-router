@@ -1,7 +1,7 @@
-name: Build wgopt4 10s route/queue diagnostic (no deployment)
+name: Build wgopt5 radio and scheduler diagnostic (no deployment)
 on:
   push:
-    branches: [diagnostics/wgopt4-tx-window-v0135]
+    branches: [diagnostics/wgopt5-radio-cpu-v0135]
   workflow_dispatch:
 permissions:
   contents: read
@@ -32,6 +32,7 @@ jobs:
           python tools/test_wgopt1.py
           python tools/test_wgopt2.py
           python tools/test_wgopt4.py
+          python tools/test_wgopt5.py
           python tools/test_snapshot_overlay.py
           python tools/test_security_0135.py
           python -m pip install paramiko requests
@@ -43,10 +44,10 @@ jobs:
       - name: Validate image and collect provenance
         run: |
           mkdir -p artifacts
-          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgopt4-esp32-s3-ota.bin
+          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgopt5-esp32-s3-ota.bin
           cp .pio/build/esp32-s3/diagnostic-components/*.json artifacts/
           cp sdkconfig.esp32-s3 artifacts/sdkconfig-built.txt
-          cp docs/WGOPT4-TX-WINDOW-RU.md artifacts/README.md
+          cp docs/WGOPT5-RADIO-CPU-RU.md artifacts/README.md
           python tools/validate_snapshot_image.py
           python tools/diagnostic_provenance.py
           pio pkg list -e esp32-s3 > artifacts/build-dependencies.txt
@@ -54,6 +55,6 @@ jobs:
           sha256sum *.bin > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: esp32-s3-0.1.35-tuya-wgopt4
+          name: esp32-s3-0.1.35-tuya-wgopt5
           path: artifacts/
           if-no-files-found: error

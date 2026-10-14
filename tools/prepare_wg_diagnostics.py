@@ -42,11 +42,12 @@ def prepare(out):
             raise RuntimeError('Pinned source hash mismatch: ' + rel)
     shutil.copytree(upstream / 'components/microlink', component, dirs_exist_ok=True)
     backend = component / 'components/wireguard_lwip'
-    for name in ('wg_diag.c', 'wg_diag.h'):
+    for name in ('wg_diag.c', 'wg_diag.h', 'wg5_diag.c'):
         shutil.copyfile(ROOT / 'diagnostics' / name, backend / 'src' / name)
     cm = backend / 'CMakeLists.txt'
     cm.write_text(replace(cm.read_text(), '        "src/wireguardif.c"',
-                         '        "src/wireguardif.c"\n        "src/wg_diag.c"'))
+                         '        "src/wireguardif.c"\n        "src/wg_diag.c"\n        "src/wg5_diag.c"'))
+    cm.write_text(replace(cm.read_text(), '        esp_timer\n)', '        esp_timer\n        esp_wifi\n)'))
     sites = []
     files = ('src/ml_net_io.c', 'src/ml_derp.c', 'src/ml_wg_mgr.c',
              'components/wireguard_lwip/src/wireguardif.c')

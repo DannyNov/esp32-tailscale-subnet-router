@@ -36,6 +36,8 @@ void wg_diag_sample_queue(unsigned q, QueueHandle_t queue);
 void wg_diag_wg4_tx(unsigned path, int result, uint32_t bytes);
 void wg_diag_start(void);
 void wg_diag_report(void);
+/* wgopt5: low-rate Wi-Fi + task profiling. Called from reporter only. */
+void wg5_report(void);
 /* GNU C: evaluates the original allocation once and preserves its type. */
 #define D_ALLOC(site, expression) ({ __auto_type d_result = (expression); \
     if (!d_result) { wg_diag_alloc_fail(site); } d_result; })
