@@ -15,10 +15,11 @@ def exact_sub(text, pattern, replacement, expected=1):
 def apply(component):
     manager = component / "src/ml_wg_mgr.c"
     s = manager.read_text()
-    s = once(s, "    struct pbuf *p = D_ALLOC(",
-             "    int64_t d_rx_pbuf_us = esp_timer_get_time();\n    struct pbuf *p = D_ALLOC(")
-    s = exact_sub(s, r"(?m)^(    struct pbuf \*p = D_ALLOC\([^\n]+\);)$",
-                  r"\1\n    wg_diag_time(D_RX_PBUF, (uint32_t)(esp_timer_get_time() - d_rx_pbuf_us));")
+    # Match only the PBUF_RAW packet-copy allocation: another PBUF_REF
+    # allocation elsewhere in this file must remain untouched.
+    s = exact_sub(s,
+        r"(?m)^(    struct pbuf \*p = D_ALLOC\(\d+, pbuf_alloc\(PBUF_RAW, pkt->len, PBUF_RAM\)\);)$",
+        r"    int64_t d_rx_pbuf_us = esp_timer_get_time();\n\1\n    wg_diag_time(D_RX_PBUF, (uint32_t)(esp_timer_get_time() - d_rx_pbuf_us));")
     s = once(s, "    pbuf_take(p, pkt->data, pkt->len);",
              "    int64_t d_rx_copy_us = esp_timer_get_time();\n    pbuf_take(p, pkt->data, pkt->len);\n    wg_diag_time(D_RX_COPY, (uint32_t)(esp_timer_get_time() - d_rx_copy_us));")
     target = "            process_wg_packet(ml, &wg_pkt);"
