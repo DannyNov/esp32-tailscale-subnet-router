@@ -32,7 +32,7 @@ def prepare(out):
     component = out / 'microlink'
     expected = json.loads((ROOT / 'diagnostics/source-hashes.json').read_text())
     for rel, digest in expected.items():
-        actual = hashlib.sha256((upstream / 'components/microlink' / rel).read_text().encode()).hexdigest()
+        actual = hashlib.sha256((upstream / 'components/microlink' / rel).read_text(encoding='utf-8').encode('utf-8')).hexdigest()
         if actual != digest:
             raise RuntimeError('Pinned source hash mismatch: ' + rel)
     shutil.copytree(upstream / 'components/microlink', component, dirs_exist_ok=True)
