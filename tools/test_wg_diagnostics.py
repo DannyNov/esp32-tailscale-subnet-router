@@ -48,14 +48,20 @@ with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='diag-test-') as tem
     task = mgr[mgr.index('void ml_wg_mgr_task('):]
     assert 'dump_wg_state_snapshot(ml);' not in task
     assert 'wg_diag_stack_sample();' in task
-    assert task.count('vTaskDelay(pdMS_TO_TICKS(10));') == 1
+    assert task.count('vTaskDelay(pdMS_TO_TICKS(wg_rx_active ? 2 : 10));') == 1
+    assert task.count('wg_rx_processed_iter++;') == 2
+    assert 'wg_diag_wake(wg_rx_active);' in task
+    assert 'ESP_LOGD(TAG, "WG endpoint port flip (NAT-rebind)' in mgr
     assert task.count('process_wg_packet(ml, &wg_pkt);') == 2
     assert 'WG_MGR_WG_BUDGET_MS     30' in task
     assert 'WG_MGR_WG_BURST         64' in task
     assert task.count('wg_diag_time(D_WAIT,') == 2
     assert all(('wg_diag_tx(%u,' % i) in mgr for i in range(4))
     wgif = (out / 'microlink/components/wireguard_lwip/src/wireguardif.c').read_text()
-    assert 'wg_diag_peer_tx(wireguard_peer_index(device, peer)' in wgif
+    assert 'wg_diag_peer_tx(d_peer, result != ERR_OK);' in wgif
+    assert 'wg_diag_time(D_TX_CRYPTO,' in wgif
+    assert 'wg_diag_time(D_TX_LOCK,' in wgif
+    assert 'wg_diag_time(D_TX_SEND,' in wgif
     assert 'ESP_LOGW(TAG, "[WG_OUT_FAIL]' not in wgif
     derp = (out / 'microlink/src/ml_derp.c').read_text()
     assert 'derp_poll_header(ml, header)' in derp
@@ -164,7 +170,7 @@ int main(void) {
     wg_diag_time(D_WAIT,31000);
     assert(times[D_DRAIN_GAP].max==50000 && times[D_LOOP_GAP].max==40000);
     assert(times[D_WAIT].slow==1);
-    wg_diag_start(); wg_diag_report(); wg_diag_report();
+    wg_diag_peer_tx_bytes(2, 1312); assert(peer_tx_wire_bytes[2] == 1312);\n    wg_diag_wake(1); wg_diag_wake(0); assert(wake_counts[0] == 1 && wake_counts[1] == 1);\n    wg_diag_time(D_TX_CRYPTO, 1000); assert(times[D_TX_CRYPTO].sum == 1000);\n    wg_diag_start(); wg_diag_report(); wg_diag_report();
     puts("PASS: concurrent counters, source isolation/overflow, allocation once, HWM, peer slots, wraparound");
     return 0;
 }

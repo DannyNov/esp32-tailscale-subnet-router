@@ -12,6 +12,7 @@ import shutil
 import subprocess
 from derp_header_overlay import apply as apply_derp_header
 from pressure_overlay import apply as apply_pressure
+from rx_tx_overlay import apply as apply_rx_tx
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = 'eb63b97073e529d57bc9c1deaeea25ac304034e5'
@@ -153,6 +154,7 @@ def prepare(out):
                            'bool accepted = wireguard_check_replay(keypair, counter);\n    if (!accepted) wg_diag_add(diag_path, D_REPLAY, 1);\n    return accepted;')
         f.write_text(text)
     apply_pressure(component)
+    apply_rx_tx(component)
     if len(sites) > 64:
         raise RuntimeError('Allocation site table exceeded')
     (out / 'allocation-sites.json').write_text(json.dumps(sites, indent=2) + '\n')

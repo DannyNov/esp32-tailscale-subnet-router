@@ -15,7 +15,7 @@ static uint32_t counts[D_PATHS][D_METRICS], allocs[ALLOCS], hwm[3];
 static uint32_t depths[3], wg_stack;
 static struct { uint32_t n, sum, max, slow; } times[D_TIMERS];
 static uint32_t peers[32][2];
-static uint32_t peer_tx[32][2];
+static uint32_t peer_tx[32][2], peer_tx_wire_bytes[32], wake_counts[2];
 static struct { uint8_t key[32]; uint32_t ip, rx, bytes, enq, drop;
                 uint16_t port; uint8_t path, used; } sources[SOURCES];
 static uint32_t source_overflow;
@@ -24,7 +24,7 @@ static const char *const names[D_METRICS] = {
     "rx", "bytes", "enq", "drop", "deq", "tx", "tx_err", "tx_evict",
     "read_err", "decrypt_ok", "decrypt_err", "forward_ok", "forward_err",
     "replay", "policy_drop", "tx_enq", "tx_drop", "init", "response", "cookie", "data", "other" };
-static const char *const timers[D_TIMERS] = {"process", "periodic", "probes", "loop", "rx_wait", "drain_gap", "loop_gap"};
+static const char *const timers[D_TIMERS] = {"process", "periodic", "probes", "loop", "rx_wait", "drain_gap", "loop_gap", "tx_lock", "tx_crypto", "tx_send"};
 /* Raw lwIP errors -16..0 plus overflow; bounded storage, no packet logs. */
 static uint32_t txstage[4][18], burst_events, burst_max, burst_run;
 static int64_t burst_last, drain_last, loop_last;
@@ -103,6 +103,10 @@ void wg_diag_peer(unsigned peer, int ok) {
 void wg_diag_peer_tx(unsigned peer, int failed) {
     if (peer < 32) add(&peer_tx[peer][failed ? 1 : 0], 1);
 }
+void wg_diag_peer_tx_bytes(unsigned peer, uint32_t bytes) {
+    if (peer < 32) add(&peer_tx_wire_bytes[peer], bytes);
+}
+void wg_diag_wake(int active) { add(&wake_counts[active ? 1 : 0], 1); }
 static void reporter(void *arg) {
     (void)arg;
     for (;;) {
@@ -125,12 +129,18 @@ void wg_diag_stack_sample(void) {
     __atomic_store_n(&wg_stack, uxTaskGetStackHighWaterMark(NULL), __ATOMIC_RELAXED);
 }
 void wg_diag_report(void) {
-    static uint32_t ptprev[32][2];
+    static uint32_t ptprev[32][2], ptbytes_prev[32], wake_prev[2];
     for (unsigned i = 0; i < 32; i++) {
         uint32_t ok = load(&peer_tx[i][0]), err = load(&peer_tx[i][1]);
-        if (ok != ptprev[i][0] || err != ptprev[i][1]) ESP_LOGI("WG_DIAG", "wgi=%u direction=tx ok_delta=%lu fail_delta=%lu", i, (unsigned long)(ok - ptprev[i][0]), (unsigned long)(err - ptprev[i][1]));
+        uint32_t bytes = load(&peer_tx_wire_bytes[i]);
+        if (ok != ptprev[i][0] || err != ptprev[i][1] || bytes != ptbytes_prev[i]) ESP_LOGI("WG_DIAG", "wgi=%u direction=tx ok_delta=%lu fail_delta=%lu wire_bytes_delta=%lu", i, (unsigned long)(ok - ptprev[i][0]), (unsigned long)(err - ptprev[i][1]), (unsigned long)(bytes - ptbytes_prev[i]));
+        ptbytes_prev[i] = bytes;
         ptprev[i][0] = ok; ptprev[i][1] = err;
     }
+    uint32_t idle = load(&wake_counts[0]), busy = load(&wake_counts[1]);
+    ESP_LOGI("WG_DIAG", "rx_schedule sleep_idle10_delta=%lu sleep_active2_delta=%lu",
+        (unsigned long)(idle - wake_prev[0]), (unsigned long)(busy - wake_prev[1]));
+    wake_prev[0] = idle; wake_prev[1] = busy;
     static uint32_t txprev[4][18], burst_prev;
     static const char *const stages[] = {"internal_wrapper", "psram_payload", "custom_pbuf", "udp_sendto"};
     for (unsigned st = 0; st < 4; st++) for (unsigned e = 0; e < 18; e++) {
