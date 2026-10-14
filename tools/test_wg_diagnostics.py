@@ -34,7 +34,9 @@ with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='diag-test-') as tem
     upstream = ROOT / 'external/microlink/components/microlink'
     allowed = {'src/ml_net_io.c', 'src/ml_derp.c', 'src/ml_wg_mgr.c',
                'components/wireguard_lwip/src/wireguardif.c',
-               'components/wireguard_lwip/CMakeLists.txt'}
+               'components/wireguard_lwip/CMakeLists.txt',
+               'components/wireguard_lwip/src/wireguard.c',
+               'components/wireguard_lwip/src/wireguard.h'}
     changed = set()
     for f in upstream.rglob('*'):
         if f.is_file():

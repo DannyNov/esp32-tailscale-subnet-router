@@ -24,7 +24,7 @@ See [release notes and installation](docs/RELEASE-0.1.31-TUYA.md).
 
 ---
 
-Candidate **0.1.33-tuya**: [provenance, OTA/rollback and hardware test plan](docs/CANDIDATE-0.1.33-TUYA.md). Hardware acceptance pending; no stable release.
+Candidate **0.1.35-tuya-wgdiag1-snapoff1**: [provenance, OTA/rollback and hardware test plan](docs/INTEGRATION-0.1.35-RU.md). Hardware acceptance pending; no stable release.
 
 ## DannyNov fork — Tuya client support
 
@@ -53,7 +53,7 @@ The existing 4 MB partition layout on N16R8 is retained. NVS ownership schema `d
 
 The sections below describe the inherited upstream platform. Screenshots may predate this fork's Tuya additions.
 
-> **Upstream status — early access (`v0.1.33`).** Upstream runs daily on its reference
+> **Upstream status — early access (`v0.1.35`).** Upstream runs daily on its reference
 > ESP32-S3 hardware and the core paths (WiFi NAT, Tailscale subnet
 > routing, DERP fallback, exit nodes, firewall) are exercised
 > continuously. Treat it as a capable hobby build, not a hardened
@@ -498,7 +498,7 @@ This is the *entire* payload — nothing else leaves the device:
 ```json
 {
   "dh": "a1b2c3d4e5f6071839",
-  "v":  "0.1.33",
+  "v":  "0.1.35",
   "bd": "2026-09-16",
   "et": "heartbeat",
   "bc": 276,
@@ -520,7 +520,7 @@ This is the *entire* payload — nothing else leaves the device:
 | Field | Meaning | Example |
 |---|---|---|
 | `dh` | anonymous device ID — 16-hex `SHA-256(WiFi MAC + fixed salt)` plus a 2-hex integrity check (18 hex total). One-way; it can't be turned back into your MAC | `a1b2c3d4e5f6071839` |
-| `v`  | firmware version | `0.1.33` |
+| `v`  | firmware version | `0.1.35` |
 | `bd` | firmware build date | `2026-09-16` |
 | `et` | event type — `boot`, `heartbeat`, or a crash report | `heartbeat` |
 | `bc` | total boot count | `276` |

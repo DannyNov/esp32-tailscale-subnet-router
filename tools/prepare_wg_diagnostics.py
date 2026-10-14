@@ -13,7 +13,7 @@ import subprocess
 from derp_header_overlay import apply as apply_derp_header
 
 ROOT = Path(__file__).resolve().parents[1]
-PIN = '2c796e3b14872b94fb2c54102affaacb1cc4a77b'
+PIN = 'eb63b97073e529d57bc9c1deaeea25ac304034e5'
 
 def replace(text, old, new, count=1):
     actual = text.count(old)
@@ -121,19 +121,29 @@ def prepare(out):
         else:
             # Results below occur after WG peer lookup/decrypt, unlike the
             # pre-authenticated DERP source labels and UDP endpoints.
-            text = replace(text, '\t\t\t\tbool decrypt_ok = wireguard_decrypt_packet(pbuf->payload, src, src_len, nonce, keypair);', '''\t\t\t\tbool decrypt_ok = wireguard_decrypt_packet(pbuf->payload, src, src_len, nonce, keypair);
+            text = replace(text, '\t\t\t\tbool decrypt_ok = wireguard_decrypt_packet(pbuf->payload, src, src_len, nonce, keypair);', '''\t\t\t\tbool decrypt_ok = wireguard_decrypt_packet_diag(pbuf->payload, src, src_len, nonce, keypair, wg_diag_rx_path());
                 wg_diag_peer(wireguard_peer_index(device, peer), decrypt_ok);
                 wg_diag_add(wg_diag_rx_path(), decrypt_ok ? D_DECRYPT_OK : D_DECRYPT_ERROR, 1);''')
             text = replace(text, 'if (device->netif->input(pbuf, device->netif) == ERR_OK) {', '''err_t d_forward = device->netif->input(pbuf, device->netif);
                                     wg_diag_add(wg_diag_rx_path(), d_forward == ERR_OK ? D_FORWARD_OK : D_FORWARD_ERROR, 1);
                                     if (d_forward == ERR_OK) {''')
-            text = replace(text, '// This is a duplicate packet / replayed / too far out of order',
-                           'wg_diag_add(wg_diag_rx_path(), D_REPLAY, 1);\n\t\t\t\t\t\t\t// This is a duplicate packet / replayed / too far out of order')
             text = replace(text, 'WG_DEBUG("[WG_RX_IP] DROPPED: dest_ok=false\\n");',
                            'wg_diag_add(wg_diag_rx_path(), D_POLICY_DROP, 1);\n\t\t\t\t\t\t\t\t\tWG_DEBUG("[WG_RX_IP] DROPPED: dest_ok=false\\n");')
         text = text.replace('wg_diag_rx_path()', '(ip_addr_isany(addr) ? D_DERP : D_DIRECT)')
         if rel == 'src/ml_derp.c':
             text = apply_derp_header(text)
+        f.write_text(text)
+    # Upstream now authenticates and checks replay inside decrypt, including
+    # keepalives. Carry the RX path explicitly: no shared/thread-local state.
+    for name in ('wireguard.c', 'wireguard.h'):
+        f = backend / 'src' / name
+        text = f.read_text()
+        text = replace(text, 'wireguard_decrypt_packet(uint8_t *dst, const uint8_t *src, size_t src_len, uint64_t counter, struct wireguard_keypair *keypair)',
+                       'wireguard_decrypt_packet_diag(uint8_t *dst, const uint8_t *src, size_t src_len, uint64_t counter, struct wireguard_keypair *keypair, unsigned diag_path)')
+        if name == 'wireguard.c':
+            text = '#include "wg_diag.h"\n' + text
+            text = replace(text, 'return wireguard_check_replay(keypair, counter);',
+                           'bool accepted = wireguard_check_replay(keypair, counter);\n    if (!accepted) wg_diag_add(diag_path, D_REPLAY, 1);\n    return accepted;')
         f.write_text(text)
     if len(sites) > 64:
         raise RuntimeError('Allocation site table exceeded')

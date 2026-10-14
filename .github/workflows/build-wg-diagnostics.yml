@@ -1,7 +1,7 @@
-name: Build WG diagnostics (no deployment)
+name: Build 0.1.35 Tuya integration (no deployment)
 on:
   push:
-    branches: [diagnostic/wg-snapshot-off-0.1.33-tuya]
+    branches: [integration/0.1.35-tuya]
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,6 +30,7 @@ jobs:
           python tools/test_integration.py
           python tools/test_wg_diagnostics.py
           python tools/test_snapshot_overlay.py
+          python tools/test_security_0135.py
           python -m pip install paramiko requests
           python tools/test_ssh_host_keys.py
       - name: Build OTA application only
@@ -39,11 +40,10 @@ jobs:
       - name: Validate image and collect provenance
         run: |
           mkdir -p artifacts
-          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.33-tuya-wgdiag1-snapoff1-esp32-s3-ota.bin
+          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgdiag1-snapoff1-esp32-s3-ota.bin
           cp .pio/build/esp32-s3/diagnostic-components/*.json artifacts/
           cp sdkconfig.esp32-s3 artifacts/sdkconfig-built.txt
-          cp docs/WG-SNAPSHOT-AUDIT-RU.md artifacts/README.md
-          cp docs/WG-SNAPSHOT-RESULT-RU.md artifacts/
+          cp docs/INTEGRATION-0.1.35-RU.md artifacts/README.md
           python tools/validate_snapshot_image.py
           python tools/diagnostic_provenance.py
           pio pkg list -e esp32-s3 > artifacts/build-dependencies.txt
@@ -51,6 +51,6 @@ jobs:
           sha256sum *.bin > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: esp32-s3-wgdiag1-snapoff1
+          name: esp32-s3-0.1.35-tuya-wgdiag1-snapoff1
           path: artifacts/
           if-no-files-found: error
