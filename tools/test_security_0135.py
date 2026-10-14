@@ -60,7 +60,7 @@ struct wireguard_keypair { uint64_t replay_counter, sending_counter; uint32_t re
 static unsigned replays[2], auth_calls;
 static bool authenticated = true;
 static void wg_diag_add(unsigned path, unsigned metric, unsigned value) { assert(path < 2 && metric == D_REPLAY); replays[path] += value; }
-static bool wireguard_aead_decrypt(uint8_t *d, const uint8_t *s, size_t n, void *ad, size_t al, uint64_t c, uint8_t *k) { (void)d;(void)s;(void)n;(void)ad;(void)al;(void)c;(void)k; auth_calls++; return authenticated; }
+static bool wgopt3_decrypt_data(uint8_t *d, const uint8_t *s, size_t n, uint64_t c, const uint8_t *k) { (void)d;(void)s;(void)n;(void)c;(void)k; auth_calls++; return authenticated; }
 '''
 replay = prefix + function(wg, 'wireguard_check_replay') + '\n' + function(wg, 'wireguard_decrypt_packet_diag') + '''
 int main(void) {
@@ -160,7 +160,7 @@ static void xSemaphoreGive(StaticSemaphore_t *p){assert(locked);locked=0;
 struct wireguard_keypair {uint64_t sending_counter;uint8_t sending_key[32];};
 static struct wireguard_keypair key;
 static unsigned seen[20000];
-static void wireguard_aead_encrypt(uint8_t *d,const uint8_t *s,size_t n,void *ad,size_t al,uint64_t counter,uint8_t *k){(void)d;(void)s;(void)n;(void)ad;(void)al;(void)k;assert(locked && counter<20000);assert(seen[counter]++==0);}
+static void wireguard_aead_encrypt(uint8_t *d,const uint8_t *s,size_t n,void *ad,size_t al,uint64_t counter,uint8_t *k){(void)d;(void)s;(void)n;(void)ad;(void)al;(void)k;assert(locked && counter<20000);}\nstatic bool wgopt3_encrypt_data(uint8_t *d,size_t n,uint64_t counter,const uint8_t *k){(void)d;(void)n;(void)k;assert(locked && counter<20000);assert(seen[counter]++==0);return true;}
 static void U64TO8_LITTLE(uint8_t *p,uint64_t n){assert(locked);memcpy(p,&n,8);}
 static void pbuf_copy_partial(void *q,uint8_t *d,size_t n,int offset){(void)q;(void)d;(void)n;(void)offset;}
 ''' + encrypt + '''
