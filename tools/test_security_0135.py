@@ -122,6 +122,7 @@ lock_start = wif.index('\t\t\t\tif (!s_wg_tx_lock)')
 lock_end = wif.index('xSemaphoreGive(s_wg_tx_lock);', lock_start) + len('xSemaphoreGive(s_wg_tx_lock);')
 encrypt = function(wg, 'wireguard_encrypt_packet')
 nonce = '''#include <assert.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
