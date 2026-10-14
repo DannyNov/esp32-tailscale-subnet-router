@@ -1,7 +1,7 @@
-name: Build WG optimized borrowed-RX candidate (no deployment)
+name: Build WG optimized mbedTLS ChaChaPoly data candidate (no deployment)
 on:
   push:
-    branches: [optimization/wgopt2-borrowed-rx-v0135]
+    branches: [optimization/wgopt3-chachapoly-v0135]
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,6 +16,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Host crypto library prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libmbedtls-dev
       - name: Host regression tests
         run: |
           python tools/run_host_tests.py
@@ -31,6 +35,7 @@ jobs:
           python tools/test_wg_diagnostics.py
           python tools/test_wgopt1.py
           python tools/test_wgopt2.py
+          python tools/test_wgopt3.py
           python tools/test_snapshot_overlay.py
           python tools/test_security_0135.py
           python -m pip install paramiko requests
@@ -42,10 +47,10 @@ jobs:
       - name: Validate image and collect provenance
         run: |
           mkdir -p artifacts
-          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgopt2-esp32-s3-ota.bin
+          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgopt3-esp32-s3-ota.bin
           cp .pio/build/esp32-s3/diagnostic-components/*.json artifacts/
           cp sdkconfig.esp32-s3 artifacts/sdkconfig-built.txt
-          cp docs/WGOPT2-BORROWED-RX-RU.md artifacts/README.md
+          cp docs/WGOPT3-CHACHAPOLY-RU.md artifacts/README.md
           python tools/validate_snapshot_image.py
           python tools/diagnostic_provenance.py
           pio pkg list -e esp32-s3 > artifacts/build-dependencies.txt
@@ -53,6 +58,6 @@ jobs:
           sha256sum *.bin > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: esp32-s3-0.1.35-tuya-wgopt2
+          name: esp32-s3-0.1.35-tuya-wgopt3
           path: artifacts/
           if-no-files-found: error
