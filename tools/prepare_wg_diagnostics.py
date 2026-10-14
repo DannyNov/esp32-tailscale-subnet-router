@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 from derp_header_overlay import apply as apply_derp_header
+from pressure_overlay import apply as apply_pressure
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = 'eb63b97073e529d57bc9c1deaeea25ac304034e5'
@@ -29,6 +30,11 @@ def prepare(out):
     if subprocess.check_output(['git', '-C', str(upstream), 'status', '--porcelain', '--untracked-files=no'], text=True).strip():
         raise RuntimeError('Pinned microlink worktree must be clean')
     component = out / 'microlink'
+    expected = json.loads((ROOT / 'diagnostics/source-hashes.json').read_text())
+    for rel, digest in expected.items():
+        actual = hashlib.sha256((upstream / 'components/microlink' / rel).read_text().encode()).hexdigest()
+        if actual != digest:
+            raise RuntimeError('Pinned source hash mismatch: ' + rel)
     shutil.copytree(upstream / 'components/microlink', component, dirs_exist_ok=True)
     backend = component / 'components/wireguard_lwip'
     for name in ('wg_diag.c', 'wg_diag.h'):
@@ -146,6 +152,7 @@ def prepare(out):
             text = replace(text, 'return wireguard_check_replay(keypair, counter);',
                            'bool accepted = wireguard_check_replay(keypair, counter);\n    if (!accepted) wg_diag_add(diag_path, D_REPLAY, 1);\n    return accepted;')
         f.write_text(text)
+    apply_pressure(component)
     if len(sites) > 64:
         raise RuntimeError('Allocation site table exceeded')
     (out / 'allocation-sites.json').write_text(json.dumps(sites, indent=2) + '\n')

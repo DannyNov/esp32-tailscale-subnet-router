@@ -15,6 +15,7 @@ static uint32_t counts[D_PATHS][D_METRICS], allocs[ALLOCS], hwm[3];
 static uint32_t depths[3], wg_stack;
 static struct { uint32_t n, sum, max, slow; } times[D_TIMERS];
 static uint32_t peers[32][2];
+static uint32_t peer_tx[32][2];
 static struct { uint8_t key[32]; uint32_t ip, rx, bytes, enq, drop;
                 uint16_t port; uint8_t path, used; } sources[SOURCES];
 static uint32_t source_overflow;
@@ -23,7 +24,10 @@ static const char *const names[D_METRICS] = {
     "rx", "bytes", "enq", "drop", "deq", "tx", "tx_err", "tx_evict",
     "read_err", "decrypt_ok", "decrypt_err", "forward_ok", "forward_err",
     "replay", "policy_drop", "tx_enq", "tx_drop", "init", "response", "cookie", "data", "other" };
-static const char *const timers[D_TIMERS] = {"process", "periodic", "probes", "loop"};
+static const char *const timers[D_TIMERS] = {"process", "periodic", "probes", "loop", "rx_wait", "drain_gap", "loop_gap"};
+/* Raw lwIP errors -16..0 plus overflow; bounded storage, no packet logs. */
+static uint32_t txstage[4][18], burst_events, burst_max, burst_run;
+static int64_t burst_last, drain_last, loop_last;
 static uint32_t load(uint32_t *p) { return __atomic_load_n(p, __ATOMIC_RELAXED); }
 static void add(uint32_t *p, uint32_t v) { __atomic_fetch_add(p, v, __ATOMIC_RELAXED); }
 static void maximum(uint32_t *p, uint32_t v) {
@@ -33,6 +37,25 @@ static void maximum(uint32_t *p, uint32_t v) {
 }
 void wg_diag_add(unsigned p, unsigned m, uint32_t v) {
     if (p < D_PATHS && m < D_METRICS) add(&counts[p][m], v);
+}
+void wg_diag_tx(unsigned stage, int err) {
+    if (stage < 4) add(&txstage[stage][err <= 0 && err >= -16 ? -err : 17], 1);
+}
+/* Direct producer is single-owner; runs split at acceptance or a 10ms gap.
+ * Max includes an unfinished run, so continuing overload remains visible. */
+void wg_diag_burst(int accepted, int64_t now) {
+    if (accepted) { burst_run = 0; return; }
+    if (!burst_run || now - burst_last > 10000) { add(&burst_events, 1); burst_run = 0; }
+    burst_last = now;
+    maximum(&burst_max, ++burst_run);
+}
+void wg_diag_drain(int64_t now) {
+    if (drain_last) wg_diag_time(D_DRAIN_GAP, (uint32_t)(now - drain_last));
+    drain_last = now;
+}
+void wg_diag_loop_gap(int64_t now) {
+    if (loop_last) wg_diag_time(D_LOOP_GAP, (uint32_t)(now - loop_last));
+    loop_last = now;
 }
 void wg_diag_type(unsigned path, const uint8_t *data, size_t len) {
     unsigned metric = D_OTHER;
@@ -77,6 +100,9 @@ void wg_diag_source(unsigned path, const uint8_t key[32], uint32_t ip,
 void wg_diag_peer(unsigned peer, int ok) {
     if (peer < 32) add(&peers[peer][ok ? 0 : 1], 1);
 }
+void wg_diag_peer_tx(unsigned peer, int failed) {
+    if (peer < 32) add(&peer_tx[peer][failed ? 1 : 0], 1);
+}
 static void reporter(void *arg) {
     (void)arg;
     for (;;) {
@@ -99,6 +125,22 @@ void wg_diag_stack_sample(void) {
     __atomic_store_n(&wg_stack, uxTaskGetStackHighWaterMark(NULL), __ATOMIC_RELAXED);
 }
 void wg_diag_report(void) {
+    static uint32_t ptprev[32][2];
+    for (unsigned i = 0; i < 32; i++) {
+        uint32_t ok = load(&peer_tx[i][0]), err = load(&peer_tx[i][1]);
+        if (ok != ptprev[i][0] || err != ptprev[i][1]) ESP_LOGI("WG_DIAG", "wgi=%u direction=tx ok_delta=%lu fail_delta=%lu", i, (unsigned long)(ok - ptprev[i][0]), (unsigned long)(err - ptprev[i][1]));
+        ptprev[i][0] = ok; ptprev[i][1] = err;
+    }
+    static uint32_t txprev[4][18], burst_prev;
+    static const char *const stages[] = {"internal_wrapper", "psram_payload", "custom_pbuf", "udp_sendto"};
+    for (unsigned st = 0; st < 4; st++) for (unsigned e = 0; e < 18; e++) {
+        uint32_t n = load(&txstage[st][e]);
+        if (n != txprev[st][e]) ESP_LOGI("WG_DIAG", "tx_stage=%s raw_err=%d delta=%lu", stages[st], e == 17 ? 127 : -(int)e, (unsigned long)(n - txprev[st][e]));
+        txprev[st][e] = n;
+    }
+    uint32_t bursts = load(&burst_events);
+    ESP_LOGI("WG_DIAG", "direct_drop_runs_delta=%lu run_max_boot=%lu gap_split_us=10000", (unsigned long)(bursts - burst_prev), (unsigned long)load(&burst_max));
+    burst_prev = bursts;
     static uint32_t previous[D_PATHS][D_METRICS], aprev[ALLOCS];
     static uint32_t pn[D_TIMERS], ps[D_TIMERS], pslow[D_TIMERS], pp[32][2];
     static uint32_t sr[SOURCES], se[SOURCES], sd[SOURCES], sb[SOURCES];

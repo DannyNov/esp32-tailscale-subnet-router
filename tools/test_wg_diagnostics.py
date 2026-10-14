@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='diag-test-') as tem
                'components/wireguard_lwip/src/wireguardif.c',
                'components/wireguard_lwip/CMakeLists.txt',
                'components/wireguard_lwip/src/wireguard.c',
-               'components/wireguard_lwip/src/wireguard.h'}
+               'components/wireguard_lwip/src/wireguard.h', 'include/microlink_internal.h'}
     changed = set()
     for f in upstream.rglob('*'):
         if f.is_file():
@@ -52,6 +52,11 @@ with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='diag-test-') as tem
     assert task.count('process_wg_packet(ml, &wg_pkt);') == 2
     assert 'WG_MGR_WG_BUDGET_MS     30' in task
     assert 'WG_MGR_WG_BURST         64' in task
+    assert task.count('wg_diag_time(D_WAIT,') == 2
+    assert all(('wg_diag_tx(%u,' % i) in mgr for i in range(4))
+    wgif = (out / 'microlink/components/wireguard_lwip/src/wireguardif.c').read_text()
+    assert 'wg_diag_peer_tx(wireguard_peer_index(device, peer)' in wgif
+    assert 'ESP_LOGW(TAG, "[WG_OUT_FAIL]' not in wgif
     derp = (out / 'microlink/src/ml_derp.c').read_text()
     assert 'derp_poll_header(ml, header)' in derp
     assert 'return n == 0 ? -1 : n;' in derp
@@ -143,8 +148,22 @@ int main(void) {
     assert(hwm[0]==32 && depths[0]==0);
     wg_diag_peer(2,1); wg_diag_peer(2,0);
     assert(peers[2][0]==1 && peers[2][1]==1);
+    wg_diag_peer_tx(2,0); wg_diag_peer_tx(2,1);
+    assert(peer_tx[2][0]==1 && peer_tx[2][1]==1);
     wg_diag_add(D_DIRECT, D_TX, UINT32_MAX); wg_diag_add(D_DIRECT, D_TX, 2);
     assert(counts[D_DIRECT][D_TX]==1);
+    wg_diag_tx(0,-1); wg_diag_tx(1,-1); wg_diag_tx(2,-1);
+    wg_diag_tx(3,-1); wg_diag_tx(3,-4); wg_diag_tx(3,0);
+    assert(txstage[0][1]==1 && txstage[1][1]==1 && txstage[2][1]==1);
+    assert(txstage[3][1]==1 && txstage[3][4]==1 && txstage[3][0]==1);
+    wg_diag_burst(0,100); wg_diag_burst(0,200); wg_diag_burst(1,300);
+    wg_diag_burst(0,400); wg_diag_burst(0,20000);
+    assert(burst_events==3 && burst_max==2);
+    wg_diag_drain(100); wg_diag_drain(50100);
+    wg_diag_loop_gap(100); wg_diag_loop_gap(40100);
+    wg_diag_time(D_WAIT,31000);
+    assert(times[D_DRAIN_GAP].max==50000 && times[D_LOOP_GAP].max==40000);
+    assert(times[D_WAIT].slow==1);
     wg_diag_start(); wg_diag_report(); wg_diag_report();
     puts("PASS: concurrent counters, source isolation/overflow, allocation once, HWM, peer slots, wraparound");
     return 0;
