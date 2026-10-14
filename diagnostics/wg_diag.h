@@ -30,6 +30,10 @@ void wg_diag_peer_tx(unsigned peer, int failed);
 void wg_diag_peer_tx_bytes(unsigned peer, uint32_t bytes);
 void wg_diag_wake(int active);
 void wg_diag_sample_queue(unsigned q, QueueHandle_t queue);
+/* wgopt4: only canonical transport DATA egress attempts, indexed by path.
+ * path: 0 = direct UDP; 1 = DERP. Error is lwIP err_t (ERR_OK == 0).
+ * Call is nonblocking and never retains packet bytes or sensitive keys. */
+void wg_diag_wg4_tx(unsigned path, int result, uint32_t bytes);
 void wg_diag_start(void);
 void wg_diag_report(void);
 /* GNU C: evaluates the original allocation once and preserves its type. */

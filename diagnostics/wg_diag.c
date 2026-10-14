@@ -19,6 +19,11 @@ static uint32_t peer_tx[32][2], peer_tx_wire_bytes[32], wake_counts[2];
 static struct { uint8_t key[32]; uint32_t ip, rx, bytes, enq, drop;
                 uint16_t port; uint8_t path, used; } sources[SOURCES];
 static uint32_t source_overflow;
+/* wgopt4: no per-packet UART, two compact warnings per 10-second window.
+ * Atomic writes protect concurrent WG TX callbacks on the tcpip thread.
+ * A 10s qpeak is reset atomically each period, unlike boot-lifetime hwm. */
+static uint32_t wg4_tx[2][3]; /* success, error, successful bytes */
+static uint32_t wg4_qpeak[3];
 static portMUX_TYPE source_lock = portMUX_INITIALIZER_UNLOCKED;
 static const char *const names[D_METRICS] = {
     "rx", "bytes", "enq", "drop", "deq", "tx", "tx_err", "tx_evict",
@@ -39,6 +44,11 @@ static void maximum(uint32_t *p, uint32_t v) {
 }
 void wg_diag_add(unsigned p, unsigned m, uint32_t v) {
     if (p < D_PATHS && m < D_METRICS) add(&counts[p][m], v);
+}
+void wg_diag_wg4_tx(unsigned path, int result, uint32_t bytes) {
+    if (path >= 2) return;
+    add(&wg4_tx[path][result == 0 ? 0 : 1], 1);
+    if (result == 0) add(&wg4_tx[path][2], bytes);
 }
 void wg_diag_tx(unsigned stage, int err) {
     if (stage < 4) add(&txstage[stage][err <= 0 && err >= -16 ? -err : 17], 1);
@@ -75,6 +85,7 @@ void wg_diag_sample_queue(unsigned q, QueueHandle_t queue) {
     if (q < 3 && queue) {
         uint32_t depth = uxQueueMessagesWaiting(queue);
         maximum(&hwm[q], depth);
+        maximum(&wg4_qpeak[q], depth);
         __atomic_store_n(&depths[q], depth, __ATOMIC_RELAXED);
     }
 }
@@ -109,11 +120,64 @@ void wg_diag_peer_tx_bytes(unsigned peer, uint32_t bytes) {
     if (peer < 32) add(&peer_tx_wire_bytes[peer], bytes);
 }
 void wg_diag_wake(int active) { add(&wake_counts[active ? 1 : 0], 1); }
+/* User-facing, bounded diagnostic output. Existing WG_DIAG INFO lines are
+ * compiled but hidden by CONFIG_LOG_DEFAULT_LEVEL_WARN=y. Keep this summary
+ * at WARN so the existing /log live 16KiB ring exposes it remotely.
+ * No peer keys/endpoints or per-packet printf. Rows span the same 10s bucket. */
+static void wg4_report(void) {
+    static uint32_t old_tx[2][3], old_n[D_TIMERS], old_sum[D_TIMERS];
+    static uint32_t old_drop[D_PATHS], old_rx[D_PATHS];
+    uint32_t delta_tx[2][3], delta_n[D_TIMERS], delta_sum[D_TIMERS];
+    uint32_t delta_drop[D_PATHS], delta_rx[D_PATHS];
+    for (unsigned p = 0; p < 2; ++p)
+        for (unsigned k = 0; k < 3; ++k) {
+            uint32_t v = load(&wg4_tx[p][k]);
+            delta_tx[p][k] = v - old_tx[p][k];
+            old_tx[p][k] = v;
+        }
+    for (unsigned i = 0; i < D_TIMERS; ++i) {
+        uint32_t n = load(&times[i].n), sum = load(&times[i].sum);
+        delta_n[i] = n - old_n[i];
+        delta_sum[i] = sum - old_sum[i];
+        old_n[i] = n; old_sum[i] = sum;
+    }
+    for (unsigned p = 0; p < D_PATHS; ++p) {
+        uint32_t n = load(&counts[p][D_RX]), d = load(&counts[p][D_DROP]);
+        delta_rx[p] = n - old_rx[p];
+        delta_drop[p] = d - old_drop[p];
+        old_rx[p] = n; old_drop[p] = d;
+    }
+    uint32_t peak = __atomic_exchange_n(&wg4_qpeak[0], 0, __ATOMIC_RELAXED);
+    const unsigned long long t_ms = (unsigned long long)(esp_timer_get_time() / 1000);
+    /* A path count is *accepted by the lower output callback*, not confirmed
+     * delivery by the remote Tailscale peer. Throughput must be measured. */
+    ESP_LOGW("WG4_TX",
+        "t_ms=%llu direct_ok=%lu direct_err=%lu direct_bytes=%lu derp_ok=%lu derp_err=%lu derp_bytes=%lu crypto_n=%lu crypto_avg_us=%lu send_avg_us=%lu lock_avg_us=%lu",
+        t_ms,
+        (unsigned long)delta_tx[0][0], (unsigned long)delta_tx[0][1], (unsigned long)delta_tx[0][2],
+        (unsigned long)delta_tx[1][0], (unsigned long)delta_tx[1][1], (unsigned long)delta_tx[1][2],
+        (unsigned long)delta_n[D_TX_CRYPTO],
+        (unsigned long)(delta_n[D_TX_CRYPTO] ? delta_sum[D_TX_CRYPTO] / delta_n[D_TX_CRYPTO] : 0),
+        (unsigned long)(delta_n[D_TX_SEND] ? delta_sum[D_TX_SEND] / delta_n[D_TX_SEND] : 0),
+        (unsigned long)(delta_n[D_TX_LOCK] ? delta_sum[D_TX_LOCK] / delta_n[D_TX_LOCK] : 0));
+    ESP_LOGW("WG4_RX",
+        "t_ms=%llu direct_rx=%lu derp_rx=%lu direct_drop=%lu derp_drop=%lu wgq_depth=%lu wgq_peak=%lu rx_wait_avg_us=%lu periodic_avg_us=%lu probes_avg_us=%lu internal_free=%u",
+        t_ms,
+        (unsigned long)delta_rx[D_DIRECT], (unsigned long)delta_rx[D_DERP],
+        (unsigned long)delta_drop[D_DIRECT], (unsigned long)delta_drop[D_DERP],
+        (unsigned long)load(&depths[0]), (unsigned long)peak,
+        (unsigned long)(delta_n[D_WAIT] ? delta_sum[D_WAIT] / delta_n[D_WAIT] : 0),
+        (unsigned long)(delta_n[D_PERIODIC] ? delta_sum[D_PERIODIC] / delta_n[D_PERIODIC] : 0),
+        (unsigned long)(delta_n[D_PROBES] ? delta_sum[D_PROBES] / delta_n[D_PROBES] : 0),
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+}
+
 static void reporter(void *arg) {
     (void)arg;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(10000));
         wg_diag_report();
+        wg4_report();
     }
 }
 void wg_diag_start(void) {

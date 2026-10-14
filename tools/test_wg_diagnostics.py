@@ -181,7 +181,12 @@ int main(void) {
     wg_diag_time(D_WAIT,31000);
     assert(times[D_DRAIN_GAP].max==50000 && times[D_LOOP_GAP].max==40000);
     assert(times[D_WAIT].slow==1);
-    wg_diag_peer_tx_bytes(2, 1312); assert(peer_tx_wire_bytes[2] == 1312);\n    wg_diag_wake(1); wg_diag_wake(0); assert(wake_counts[0] == 1 && wake_counts[1] == 1);\n    wg_diag_time(D_TX_CRYPTO, 1000); assert(times[D_TX_CRYPTO].sum == 1000);
+    wg_diag_peer_tx_bytes(2, 1312); assert(peer_tx_wire_bytes[2] == 1312);
+    wg_diag_wg4_tx(0, 0, 1312); wg_diag_wg4_tx(0, -1, 999);
+    wg_diag_wg4_tx(1, 0, 82);
+    assert(wg4_tx[0][0] == 1 && wg4_tx[0][1] == 1 && wg4_tx[0][2] == 1312);
+    assert(wg4_tx[1][0] == 1 && wg4_tx[1][1] == 0 && wg4_tx[1][2] == 82);
+    wg4_report(); assert(wg4_qpeak[0] == 0);\n    wg_diag_wake(1); wg_diag_wake(0); assert(wake_counts[0] == 1 && wake_counts[1] == 1);\n    wg_diag_time(D_TX_CRYPTO, 1000); assert(times[D_TX_CRYPTO].sum == 1000);
     wg_diag_time(D_RX_DECRYPT, 850); wg_diag_time(D_RX_HS, 123000);
     assert(times[D_RX_DECRYPT].sum == 850 && times[D_RX_HS].max == 123000);\n    wg_diag_start(); wg_diag_report(); wg_diag_report();
     puts("PASS: concurrent counters, source isolation/overflow, allocation once, HWM, peer slots, wraparound");
