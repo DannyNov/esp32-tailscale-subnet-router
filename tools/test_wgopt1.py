@@ -17,7 +17,8 @@ with TemporaryDirectory(prefix="wgopt1-contract-") as tmp:
     i_derp = src.index("if (ip_addr_isany(&peer->ip) || peer->port == 0 || device->force_derp_output)")
     i_direct = src.index("if (device->udp_output_fn)", i_derp)
     i_short = src.index("if (device->udp_pbuf_output_fn && q &&", i_direct)
-    i_fallback = src.index("uint8_t *data = (uint8_t *)WG_OUT_ALLOC(q->tot_len)", i_short)
+    i_fallback = src.index("// Linearize pbuf chain and send via callback", i_short)
+    assert "WG_OUT_ALLOC(q->tot_len)" in src[i_fallback:src.index("// Convert lwIP IP address", i_fallback)]
     assert i_derp < i_direct < i_short < i_fallback
     assert "q->len == q->tot_len" in src[i_short:i_fallback]
     assert "result = device->udp_pbuf_output_fn(dest_ip, peer->port, q," in src[i_short:i_fallback]
