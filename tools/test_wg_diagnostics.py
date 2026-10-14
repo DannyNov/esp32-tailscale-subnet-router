@@ -36,7 +36,8 @@ with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='diag-test-') as tem
                'components/wireguard_lwip/src/wireguardif.c',
                'components/wireguard_lwip/CMakeLists.txt',
                'components/wireguard_lwip/src/wireguard.c',
-               'components/wireguard_lwip/src/wireguard.h', 'include/microlink_internal.h'}
+               'components/wireguard_lwip/src/wireguard.h',
+               'components/wireguard_lwip/src/wireguardif.h', 'include/microlink_internal.h'}
     changed = set()
     for f in upstream.rglob('*'):
         if f.is_file():
