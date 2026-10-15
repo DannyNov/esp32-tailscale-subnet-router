@@ -166,7 +166,7 @@ static void wg12_stop(void) {
     wg12_enabled = false;
     portEXIT_CRITICAL(&wg12_mux);
     if (wg12_timer) esp_timer_stop(wg12_timer);
-    if (tcpip_callback_with_block(wg12_discard_cb, NULL, 1) != ERR_OK)
+    if (tcpip_callback_wait(wg12_discard_cb, NULL) != ERR_OK)
         wg12_discard_cb(NULL);
 }
 """
