@@ -39,7 +39,7 @@ for name in ('ml_coord.c', 'ml_netcheck.c'):
 # wgopt7 adds only queue geometry reporting in generated microlink.c.
 # Strip the two exact probes, then require byte-for-byte upstream identity.
 generated_init = (src / 'src/microlink.c').read_text()
-assert generated_init.startswith('#include "wg_diag.h"\\n'.replace('\\n', '\n'))
+assert generated_init.startswith('#include "wg_diag.h"\n')
 generated_init = generated_init.removeprefix('#include "wg_diag.h"\n')
 probe = '    wg_diag_queue_config(ML_WG_RX_QUEUE_DEPTH, sizeof(ml_rx_packet_t));\n'
 assert generated_init.count(probe) == 1
