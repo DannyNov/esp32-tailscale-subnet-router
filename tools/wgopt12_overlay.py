@@ -192,7 +192,7 @@ def apply(component):
     if (data_packet && wg12_backlogged())
         return wg12_enqueue(p, dest_ip, dest_port, true) ? ERR_OK : ERR_MEM;
 """
-    body = once(body, anchor, pre + anchor)
+    body = once(body, '    wg9_direct_udp_begin();', pre + '    wg9_direct_udp_begin();')
     body = once(body, '    wg9_direct_udp_end(err);',
         """    const bool driver_nomem = err == ERR_MEM && wg10_wifi_nomem_in_scope();
     wg9_direct_udp_end(err);
