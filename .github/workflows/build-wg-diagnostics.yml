@@ -1,7 +1,7 @@
-name: Build wgopt12 bounded Wi-Fi TX retries (no deployment)
+name: Build wgopt13 passive loop diagnostics (no deployment)
 on:
   push:
-    branches: [optimization/wgopt12-bounded-wifi-retry-v0135]
+    branches: [diagnostic/wgopt13-loop-latency-v0135]
   workflow_dispatch:
 permissions:
   contents: read
@@ -37,6 +37,7 @@ jobs:
           python tools/test_wgopt9.py
           python tools/test_wgopt10.py
           python tools/test_wgopt12.py
+          python tools/test_wgopt13.py
           python tools/test_snapshot_overlay.py
           python tools/test_security_0135.py
           python -m pip install paramiko requests
@@ -48,10 +49,10 @@ jobs:
       - name: Validate image and collect provenance
         run: |
           mkdir -p artifacts
-          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgopt12-esp32-s3-ota.bin
+          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgopt13-esp32-s3-ota.bin
           cp .pio/build/esp32-s3/diagnostic-components/*.json artifacts/
           cp sdkconfig.esp32-s3 artifacts/sdkconfig-built.txt
-          cp docs/WGOPT12-BOUNDED-RETRY-RU.md artifacts/README.md
+          cp docs/WGOPT13-DIAGNOSTICS-RU.md artifacts/README.md
           python tools/validate_snapshot_image.py
           python tools/diagnostic_provenance.py
           pio pkg list -e esp32-s3 > artifacts/build-dependencies.txt
@@ -59,6 +60,6 @@ jobs:
           sha256sum *.bin > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: esp32-s3-0.1.35-tuya-wgopt12
+          name: esp32-s3-0.1.35-tuya-wgopt13
           path: artifacts/
           if-no-files-found: error

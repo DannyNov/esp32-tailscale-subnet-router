@@ -21,6 +21,7 @@ from wgopt6_overlay import apply as apply_wgopt6
 from wgopt7_overlay import apply as apply_wgopt7
 from wgopt9_overlay import apply as apply_wgopt9
 from wgopt12_overlay import apply as apply_wgopt12
+from wgopt13_overlay import apply as apply_wgopt13
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = 'eb63b97073e529d57bc9c1deaeea25ac304034e5'
@@ -172,10 +173,15 @@ def prepare(out):
     apply_wgopt7(component)
     apply_wgopt9(component)
     apply_wgopt12(component)
+    apply_wgopt13(component)
     if len(sites) > 64:
         raise RuntimeError('Allocation site table exceeded')
     (out / 'allocation-sites.json').write_text(json.dumps(sites, indent=2) + '\n')
-    (out / 'overlay-provenance.json').write_text(json.dumps({'microlink': PIN, 'source_sha256': hashes, 'snapshot_policy': 'disabled-in-wg-consumer', 'derp_header_overlay': 'derphdr1'}, indent=2) + '\n')
+    generated_hashes = {str(f.relative_to(component)).replace('\\', '/'): hashlib.sha256(f.read_bytes()).hexdigest()
+                        for f in sorted(component.rglob('*')) if f.is_file()}
+    (out / 'overlay-provenance.json').write_text(json.dumps({'microlink': PIN, 'source_sha256': hashes,
+        'generated_sha256': generated_hashes, 'diagnostic': 'wgopt13-passive',
+        'snapshot_policy': 'disabled-in-wg-consumer', 'derp_header_overlay': 'derphdr1'}, indent=2) + '\n')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
