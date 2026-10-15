@@ -29,6 +29,7 @@ static uint32_t wg8_direct_result[18];
  * synchronous direct WG UDP send. No packet payload/peer information.
  * ERR_MEM before a STA callback may also mean a different outgoing netif.
  * This state is process-local, bounded, and not retained after each call. */
+static void add(uint32_t *p, uint32_t v); /* forward declaration for probe */
 static TaskHandle_t wg9_tx_owner;
 static uint32_t wg9_sta_seen;
 static int32_t wg9_sta_first_error;
