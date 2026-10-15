@@ -34,6 +34,8 @@ void wg_diag_sample_queue(unsigned q, QueueHandle_t queue);
  * path: 0 = direct UDP; 1 = DERP. Error is lwIP err_t (ERR_OK == 0).
  * Call is nonblocking and never retains packet bytes or sensitive keys. */
 void wg_diag_wg4_tx(unsigned path, int result, uint32_t bytes);
+void wg_diag_rx_alloc(unsigned stage);
+void wg_diag_queue_config(unsigned cap, unsigned item_size);
 void wg_diag_start(void);
 void wg_diag_report(void);
 /* wgopt5: low-rate Wi-Fi + task profiling. Called from reporter only. */

@@ -1,7 +1,7 @@
-name: Build wgopt6 bounded RX queue candidate (no deployment)
+name: Build wgopt7 128-slot RX queue candidate (no deployment)
 on:
   push:
-    branches: [optimization/wgopt6-rx-queue64-v0135]
+    branches: [optimization/wgopt7-rx-queue128-v0135]
   workflow_dispatch:
 permissions:
   contents: read
@@ -45,10 +45,10 @@ jobs:
       - name: Validate image and collect provenance
         run: |
           mkdir -p artifacts
-          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgopt6-esp32-s3-ota.bin
+          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgopt7-esp32-s3-ota.bin
           cp .pio/build/esp32-s3/diagnostic-components/*.json artifacts/
           cp sdkconfig.esp32-s3 artifacts/sdkconfig-built.txt
-          cp docs/WGOPT6-RX-QUEUE64-RU.md artifacts/README.md
+          cp docs/WGOPT7-RX-QUEUE128-RU.md artifacts/README.md
           python tools/validate_snapshot_image.py
           python tools/diagnostic_provenance.py
           pio pkg list -e esp32-s3 > artifacts/build-dependencies.txt
@@ -56,6 +56,6 @@ jobs:
           sha256sum *.bin > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: esp32-s3-0.1.35-tuya-wgopt6
+          name: esp32-s3-0.1.35-tuya-wgopt7
           path: artifacts/
           if-no-files-found: error

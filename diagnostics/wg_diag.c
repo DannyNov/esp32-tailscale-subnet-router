@@ -24,6 +24,15 @@ static uint32_t source_overflow;
  * A 10s qpeak is reset atomically each period, unlike boot-lifetime hwm. */
 static uint32_t wg4_tx[2][3]; /* success, error, successful bytes */
 static uint32_t wg4_qpeak[3];
+/* wgopt7: one-time queue geometry, atomic direct RX allocation buckets. */
+static uint32_t wg7_queue_cap, wg7_queue_item_size, wg7_rx_alloc[3];
+void wg_diag_queue_config(unsigned cap, unsigned item_size) {
+    __atomic_store_n(&wg7_queue_cap, cap, __ATOMIC_RELAXED);
+    __atomic_store_n(&wg7_queue_item_size, item_size, __ATOMIC_RELAXED);
+}
+void wg_diag_rx_alloc(unsigned stage) {
+    if (stage < 3) __atomic_fetch_add(&wg7_rx_alloc[stage], 1, __ATOMIC_RELAXED);
+}
 static portMUX_TYPE source_lock = portMUX_INITIALIZER_UNLOCKED;
 static const char *const names[D_METRICS] = {
     "rx", "bytes", "enq", "drop", "deq", "tx", "tx_err", "tx_evict",
@@ -161,7 +170,7 @@ static void wg4_report(void) {
         (unsigned long)(delta_n[D_TX_SEND] ? delta_sum[D_TX_SEND] / delta_n[D_TX_SEND] : 0),
         (unsigned long)(delta_n[D_TX_LOCK] ? delta_sum[D_TX_LOCK] / delta_n[D_TX_LOCK] : 0));
     ESP_LOGW("WG4_RX",
-        "t_ms=%llu direct_rx=%lu derp_rx=%lu direct_drop=%lu derp_drop=%lu wgq_depth=%lu wgq_peak=%lu wgq_cap=64 rx_wait_avg_us=%lu periodic_avg_us=%lu probes_avg_us=%lu internal_free=%u",
+        "t_ms=%llu direct_rx=%lu derp_rx=%lu direct_drop=%lu derp_drop=%lu wgq_depth=%lu wgq_peak=%lu wgq_cap=128 rx_wait_avg_us=%lu periodic_avg_us=%lu probes_avg_us=%lu internal_free=%u",
         t_ms,
         (unsigned long)delta_rx[D_DIRECT], (unsigned long)delta_rx[D_DERP],
         (unsigned long)delta_drop[D_DIRECT], (unsigned long)delta_drop[D_DERP],
@@ -172,6 +181,32 @@ static void wg4_report(void) {
         (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
 }
 
+/* 10-second passive internal/PSRAM heap and direct UDP allocation report.
+ * Allocation counters cover shared direct UDP ingress (WG and DISCO).
+ * malloc fallback does not guarantee internal RAM placement. */
+static void wg7_report(void) {
+    static uint32_t previous[3];
+    uint32_t delta[3];
+    for (unsigned i = 0; i < 3; ++i) {
+        uint32_t now = __atomic_load_n(&wg7_rx_alloc[i], __ATOMIC_RELAXED);
+        delta[i] = now - previous[i];
+        previous[i] = now;
+    }
+    const uint32_t internal = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    const uint32_t psram = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+    ESP_LOGW("WG7_MEM",
+        "wgq_cap=%lu wgq_item_bytes=%lu internal_free=%u internal_min=%u internal_largest=%u psram_free=%u psram_min=%u psram_largest=%u udp_psram_delta=%lu udp_fallback_delta=%lu udp_alloc_fail_delta=%lu",
+        (unsigned long)__atomic_load_n(&wg7_queue_cap, __ATOMIC_RELAXED),
+        (unsigned long)__atomic_load_n(&wg7_queue_item_size, __ATOMIC_RELAXED),
+        (unsigned)heap_caps_get_free_size(internal),
+        (unsigned)heap_caps_get_minimum_free_size(internal),
+        (unsigned)heap_caps_get_largest_free_block(internal),
+        (unsigned)heap_caps_get_free_size(psram),
+        (unsigned)heap_caps_get_minimum_free_size(psram),
+        (unsigned)heap_caps_get_largest_free_block(psram),
+        (unsigned long)delta[0], (unsigned long)delta[1],
+        (unsigned long)delta[2]);
+}
 static void reporter(void *arg) {
     (void)arg;
     for (;;) {
@@ -179,6 +214,7 @@ static void reporter(void *arg) {
         wg_diag_report();
         wg4_report();
         wg5_report();
+        wg7_report();
     }
 }
 void wg_diag_start(void) {

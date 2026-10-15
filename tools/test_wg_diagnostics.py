@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='diag-test-') as tem
     # The only production files changed in the copy are the four instrumented
     # sources and backend CMake plus the two new telemetry files.
     upstream = ROOT / 'external/microlink/components/microlink'
-    allowed = {'src/ml_net_io.c', 'src/ml_derp.c', 'src/ml_wg_mgr.c',
+    allowed = {'src/microlink.c', 'src/ml_net_io.c', 'src/ml_derp.c', 'src/ml_wg_mgr.c',
                'components/wireguard_lwip/src/wireguardif.c',
                'components/wireguard_lwip/CMakeLists.txt',
                'components/wireguard_lwip/src/wireguard.c',
