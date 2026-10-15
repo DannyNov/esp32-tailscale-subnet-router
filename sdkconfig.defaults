@@ -221,10 +221,6 @@ CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=48
 # that still hit STUN/DNS on microlink-startup and double-load bursts — 0 in
 # the SD recorder afterward, with no download-bufferbloat regression measured.
 CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=48
-# wgopt11 controlled experiment: +4 static Wi-Fi TX buffers (~6.4KiB
-# permanently reserved internal RAM). CACHE_TX remains 32 (the previous
-# 96-buffer experiment caused excessive queueing delay), RX is unchanged.
-# Roll back to wgopt10 if internal RAM becomes tight or connection unstable.
 CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=36
 CONFIG_ESP_WIFI_CACHE_TX_BUFFER_NUM=32
 CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=y

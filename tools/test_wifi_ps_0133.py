@@ -30,6 +30,12 @@ for path in protected:
         raise AssertionError(f'Protected path missing: {path}')
     old = subprocess.check_output(['git', 'show', f'bd0a9c0dd2e0109544a6aa2a441e92e2670df62a:{path}'], cwd=root)
     current = (root / path).read_bytes().replace(b'\r\n', b'\n')
+    if path == 'sdkconfig.defaults':
+        # wgopt11 tests exactly one controlled TX capacity change; all other
+        # protected SDK flags must remain byte-identical to the original.
+        assert current.count(b'CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=36') == 1
+        current = current.replace(b'CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=36',
+                                  b'CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=32')
     if path == 'platformio.ini':
         # Diagnostic build pins the exact platform used by the original CI.
         # All hardware/network/build flags remain byte-identical.

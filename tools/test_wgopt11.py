@@ -31,7 +31,8 @@ allowed = {
     'sdkconfig.defaults','CMakeLists.txt',
     'tools/validate_snapshot_image.py','tools/diagnostic_provenance.py',
     '.github/workflows/build-wg-diagnostics.yml','tools/test_integration.py',
-    'tools/test_wgopt11.py','docs/WGOPT11-STATIC-TX36-RU.md'
+    'tools/test_wgopt11.py','docs/WGOPT11-STATIC-TX36-RU.md',
+    'tools/test_wifi_ps_0133.py'
 }
 assert set(namefiles) <= allowed, 'Unexpected changed file(s): ' + repr(set(namefiles)-allowed)
 assert 'sdkconfig.defaults' in namefiles
