@@ -188,6 +188,17 @@ int main(void) {
     wg_diag_wg4_tx(1, 0, 82);
     assert(wg4_tx[0][0] == 1 && wg4_tx[0][1] == 1 && wg4_tx[0][2] == 1312);
     assert(wg4_tx[1][0] == 1 && wg4_tx[1][1] == 0 && wg4_tx[1][2] == 82);
+    assert(sizeof(wg8_direct_result) == 72);
+    assert(load(&wg8_direct_result[0]) == 1 && load(&wg8_direct_result[1]) == 1);
+    wg4_report();
+    for (unsigned e=0; e<18; e++) assert(load(&wg8_direct_result[e]) == 0);
+    for (int e=0; e>=-16; e--) wg_diag_wg4_tx(0,e,10);
+    wg_diag_wg4_tx(0,1,0); wg_diag_wg4_tx(0,-17,0);
+    wg_diag_wg4_tx(1,-4,0); wg_diag_wg4_tx(2,-4,0);
+    for (unsigned e=0; e<17; e++) assert(load(&wg8_direct_result[e]) == 1);
+    assert(load(&wg8_direct_result[17]) == 2);
+    wg4_report();
+    for (unsigned e=0; e<18; e++) assert(load(&wg8_direct_result[e]) == 0);
     wg4_report(); assert(wg4_qpeak[0] == 0);\n    wg_diag_wake(1); wg_diag_wake(0); assert(wake_counts[0] == 1 && wake_counts[1] == 1);\n    wg_diag_time(D_TX_CRYPTO, 1000); assert(times[D_TX_CRYPTO].sum == 1000);
     wg_diag_time(D_RX_DECRYPT, 850); wg_diag_time(D_RX_HS, 123000);
     assert(times[D_RX_DECRYPT].sum == 850 && times[D_RX_HS].max == 123000);\n    wg_diag_start(); wg_diag_report(); wg_diag_report();
@@ -200,6 +211,10 @@ int main(void) {
                         '-I' + str(stub), '-I' + str(ROOT / 'diagnostics'),
                         str(test), '-o', str(exe)], check=True)
         result = subprocess.check_output([str(exe)], text=True)
+        assert 'bucket=17 raw_err=127 delta=2' in result
+        assert 'window_ms=10000 bucket=0 raw_err=0 delta=1' in result
+        for e in range(17):
+            assert f'bucket={e} raw_err={-e} delta=1' in result
         assert 'source=S0 path=derp rx_delta=40000' in result
         assert 'rx=40000(+0)' in result
         print(result.splitlines()[-1])

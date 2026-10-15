@@ -23,6 +23,8 @@ static uint32_t source_overflow;
  * Atomic writes protect concurrent WG TX callbacks on the tcpip thread.
  * A 10s qpeak is reset atomically each period, unlike boot-lifetime hwm. */
 static uint32_t wg4_tx[2][3]; /* success, error, successful bytes */
+/* wgopt8: exact direct results, drained by the reporter; 72 bytes total. */
+static uint32_t wg8_direct_result[18];
 static uint32_t wg4_qpeak[3];
 /* wgopt7: one-time queue geometry, atomic direct RX allocation buckets. */
 static uint32_t wg7_queue_cap, wg7_queue_item_size, wg7_rx_alloc[3];
@@ -56,6 +58,8 @@ void wg_diag_add(unsigned p, unsigned m, uint32_t v) {
 }
 void wg_diag_wg4_tx(unsigned path, int result, uint32_t bytes) {
     if (path >= 2) return;
+    if (path == 0)
+        add(&wg8_direct_result[result <= 0 && result >= -16 ? -result : 17], 1);
     add(&wg4_tx[path][result == 0 ? 0 : 1], 1);
     if (result == 0) add(&wg4_tx[path][2], bytes);
 }
@@ -134,6 +138,23 @@ void wg_diag_wake(int active) { add(&wake_counts[active ? 1 : 0], 1); }
  * at WARN so the existing /log live 16KiB ring exposes it remotely.
  * No peer keys/endpoints or per-packet printf. Rows span the same 10s bucket. */
 static void wg4_report(void) {
+    static int64_t result_window_start_us;
+    const int64_t result_window_end_us = esp_timer_get_time();
+    const unsigned long long result_window_ms =
+        (unsigned long long)((result_window_end_us - result_window_start_us) / 1000);
+    result_window_start_us = result_window_end_us;
+    /* Atomic exchange keeps events concurrent with reporting in this or the
+     * next window. Legacy WG4_TX counters are sampled separately, so events
+     * at a window boundary may appear in adjacent windows across reports. */
+    uint32_t result_delta[18];
+    for (unsigned e = 0; e < 18; ++e)
+        result_delta[e] = __atomic_exchange_n(&wg8_direct_result[e], 0, __ATOMIC_RELAXED);
+    for (unsigned e = 0; e < 18; ++e) {
+        if (result_delta[e]) ESP_LOGW("WG4_TXERR",
+            "t_ms=%llu window_ms=%llu bucket=%u raw_err=%d delta=%lu",
+            (unsigned long long)(result_window_end_us / 1000), result_window_ms,
+            e, e == 17 ? 127 : -(int)e, (unsigned long)result_delta[e]);
+    }
     static uint32_t old_tx[2][3], old_n[D_TIMERS], old_sum[D_TIMERS];
     static uint32_t old_drop[D_PATHS], old_rx[D_PATHS];
     uint32_t delta_tx[2][3], delta_n[D_TIMERS], delta_sum[D_TIMERS];

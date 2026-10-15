@@ -34,6 +34,8 @@ with TemporaryDirectory(prefix="wgopt1-contract-") as tmp:
     for forbidden in ("malloc(", "free(", "memcpy(", "pbuf_alloc(", "pbuf_free(", "pbuf_ref(", "tcpip_callback("):
         assert forbidden not in fn, forbidden
     assert "udp_sendto(s_wg_output_pcb, p, &dst, dest_port)" in fn
+    assert fn.count("wg_diag_tx(3, err);") == 1
+    assert fn.index("udp_sendto(") < fn.index("wg_diag_tx(3, err);") < fn.index("return err;")
     assert "wgopt1_send_both(ml, dest_ip, packet_data, packet_len)" in fn
     assert "p->len != p->tot_len" in fn
     assert "if (!ml || !s_wg_output_pcb) return ERR_CONN" in fn

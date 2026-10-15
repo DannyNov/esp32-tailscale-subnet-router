@@ -115,6 +115,7 @@ static err_t wgopt1_udp_pbuf_output_cb(uint32_t dest_ip, uint16_t dest_port,
     IP_SET_TYPE_VAL(dst, IPADDR_TYPE_V4);
     ip4_addr_set_u32(ip_2_ip4(&dst), dest_ip);
     err_t err = udp_sendto(s_wg_output_pcb, p, &dst, dest_port);
+    wg_diag_tx(3, err);
     /* Type 4 bulk data never goes to DERP duplicate; exact same helper
      * as legacy direct callback handles type 1..3 handshake messages. */
     wgopt1_send_both(ml, dest_ip, packet_data, packet_len);
