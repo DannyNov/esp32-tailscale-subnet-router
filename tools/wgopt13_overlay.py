@@ -71,9 +71,9 @@ def apply(component):
     s = once(s, '        /* Re-drain WG RX', '        wg13_time(&wg13_live, WG13_CONTROL_MID, wg13_mid_start, esp_timer_get_time());\n        /* Re-drain WG RX')
     delay = '        vTaskDelay(pdMS_TO_TICKS(wg_rx_active ? 2 : 10));'
     s = once(s, delay, '''        int64_t wg13_delay_start = esp_timer_get_time();
-        wg13_time(&wg13_live, WG13_WORK, d_loop_start, wg13_delay_start);
 '''+delay+'''
         int64_t wg13_end = esp_timer_get_time();
+        wg13_time(&wg13_live, WG13_WORK, d_loop_start, wg13_delay_start);
         wg13_time(&wg13_live, wg_rx_active ? WG13_ACTIVE : WG13_IDLE, wg13_delay_start, wg13_end);
         wg13_time(&wg13_live, WG13_CYCLE, d_loop_start, wg13_end);
         if (wg13_end - wg13_live.start_us >= 10000000LL) {
