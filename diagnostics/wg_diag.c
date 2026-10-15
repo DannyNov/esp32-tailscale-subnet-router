@@ -1,5 +1,6 @@
 #include "wg_diag.h"
 #include "esp_log.h"
+#include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "freertos/task.h"
 #include "freertos/idf_additions.h"
@@ -30,6 +31,16 @@ static uint32_t wg8_direct_result[18];
  * ERR_MEM before a STA callback may also mean a different outgoing netif.
  * This state is process-local, bounded, and not retained after each call. */
 static void add(uint32_t *p, uint32_t v); /* forward declaration for probe */
+/* wgopt10: per-task scoped raw Wi-Fi TX result.
+ * Captures actual esp_wifi_internal_tx[_by_ref] return code from --wrap.
+ * An observed STA ERR_MEM without Wi-Fi callback may be a pbuf allocation
+ * before the driver, but does not by itself prove pbuf exhaustion. */
+static uint32_t wg10_wifi_seen, wg10_sta_chained, wg10_sta_shape_seen;
+static int32_t wg10_wifi_raw;
+static uint32_t wg10_counts[8];
+enum { WG10_DRIVER_NOMEM, WG10_DRIVER_OTHER, WG10_DRIVER_OK,
+       WG10_NO_DRIVER_CHAIN, WG10_NO_DRIVER_SINGLE,
+       WG10_REF_CALLS, WG10_COPY_CALLS, WG10_OTHER_RAW_ERROR };
 static TaskHandle_t wg9_tx_owner;
 static uint32_t wg9_sta_seen;
 static int32_t wg9_sta_first_error;
@@ -47,8 +58,27 @@ void wg9_direct_udp_begin(void) {
         return;
     }
     __atomic_store_n(&wg9_sta_seen, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&wg10_wifi_seen, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&wg10_wifi_raw, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&wg10_sta_chained, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&wg10_sta_shape_seen, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&wg9_sta_first_error, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&wg9_tx_owner, self, __ATOMIC_RELEASE);
+}
+void wg10_sta_pbuf_shape(int chained) {
+    if (__atomic_load_n(&wg9_tx_owner, __ATOMIC_ACQUIRE) !=
+        xTaskGetCurrentTaskHandle()) return;
+    __atomic_store_n(&wg10_sta_shape_seen, 1, __ATOMIC_RELAXED);
+    __atomic_store_n(&wg10_sta_chained, chained ? 1u : 0u, __ATOMIC_RELAXED);
+}
+void wg10_wifi_driver_result(int raw_err, int by_ref) {
+    if (__atomic_load_n(&wg9_tx_owner, __ATOMIC_ACQUIRE) !=
+        xTaskGetCurrentTaskHandle()) return;
+    __atomic_store_n(&wg10_wifi_seen, 1, __ATOMIC_RELAXED);
+    if (raw_err) __atomic_store_n(&wg10_wifi_raw, raw_err, __ATOMIC_RELAXED);
+    add(&wg10_counts[by_ref ? WG10_REF_CALLS : WG10_COPY_CALLS], 1);
+    if (raw_err && raw_err != ESP_ERR_NO_MEM)
+        add(&wg10_counts[WG10_OTHER_RAW_ERROR], 1);
 }
 void wg9_sta_link_result(int err) {
     if (__atomic_load_n(&wg9_tx_owner, __ATOMIC_ACQUIRE) !=
@@ -68,6 +98,17 @@ void wg9_direct_udp_end(int err) {
     const int32_t lower_err = __atomic_load_n(&wg9_sta_first_error, __ATOMIC_RELAXED);
     if (err == -1) { /* lwIP ERR_MEM */
         add(&wg9_counts[WG9_TOTAL_ERRMEM], 1);
+        if (seen && lower_err == -1) {
+            if (__atomic_load_n(&wg10_wifi_seen, __ATOMIC_RELAXED)) {
+                int32_t raw = __atomic_load_n(&wg10_wifi_raw, __ATOMIC_RELAXED);
+                add(&wg10_counts[raw == ESP_ERR_NO_MEM ? WG10_DRIVER_NOMEM :
+                    raw ? WG10_DRIVER_OTHER : WG10_DRIVER_OK], 1);
+            } else {
+                int chained = __atomic_load_n(&wg10_sta_shape_seen, __ATOMIC_RELAXED) &&
+                    __atomic_load_n(&wg10_sta_chained, __ATOMIC_RELAXED);
+                add(&wg10_counts[chained ? WG10_NO_DRIVER_CHAIN : WG10_NO_DRIVER_SINGLE], 1);
+            }
+        }
         add(&wg9_counts[!seen ? WG9_NO_STA_OUTPUT :
             lower_err == -1 ? WG9_STA_ERRMEM :
             lower_err ? WG9_STA_OTHER_ERROR : WG9_STA_RETURNED_OK], 1);
@@ -304,6 +345,25 @@ static void wg9_report(void) {
         (unsigned)heap_caps_get_largest_free_block(dma),
         (unsigned long)__atomic_load_n(&wg9_dma_min_largest_at_err, __ATOMIC_RELAXED));
 }
+static void wg10_report(void) {
+    static uint32_t prev[8];
+    uint32_t delta[8];
+    for (unsigned i = 0; i < 8; ++i) {
+        uint32_t n = __atomic_load_n(&wg10_counts[i], __ATOMIC_RELAXED);
+        delta[i] = n - prev[i];
+        prev[i] = n;
+    }
+    ESP_LOGW("WG10_WIFI_TX",
+        "sta_errmem_driver_nomem=%lu sta_errmem_driver_other=%lu sta_errmem_driver_ok=%lu sta_errmem_no_driver_chain=%lu sta_errmem_no_driver_single=%lu ref_calls=%lu copy_calls=%lu raw_other_errors=%lu",
+        (unsigned long)delta[WG10_DRIVER_NOMEM],
+        (unsigned long)delta[WG10_DRIVER_OTHER],
+        (unsigned long)delta[WG10_DRIVER_OK],
+        (unsigned long)delta[WG10_NO_DRIVER_CHAIN],
+        (unsigned long)delta[WG10_NO_DRIVER_SINGLE],
+        (unsigned long)delta[WG10_REF_CALLS],
+        (unsigned long)delta[WG10_COPY_CALLS],
+        (unsigned long)delta[WG10_OTHER_RAW_ERROR]);
+}
 static void reporter(void *arg) {
     (void)arg;
     for (;;) {
@@ -313,6 +373,7 @@ static void reporter(void *arg) {
         wg5_report();
         wg7_report();
         wg9_report();
+        wg10_report();
     }
 }
 void wg_diag_start(void) {

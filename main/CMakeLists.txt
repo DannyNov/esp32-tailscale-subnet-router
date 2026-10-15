@@ -41,6 +41,7 @@ idf_component_register(SRCS "main.c"
                             "web_ui.c"
                             "peer_dns.c"
                             "netif_hooks.c"
+                            "wg10_wifi_tx.c"
                             "wifi_networks.c"
                             "dhcp_reservations.c"
                             "dhcp_bindings.c"
@@ -86,3 +87,8 @@ target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=panic_print_str")
 # addresses and the register-dump decimals actually appear in the ring.
 target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=panic_print_hex")
 target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=panic_print_dec")
+
+# wgopt10: intercept external wlanif -> Wi-Fi TX calls only to measure the
+# original raw esp_err_t. Identical arguments and return, no retries/sleeps.
+target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_wifi_internal_tx_by_ref")
+target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_wifi_internal_tx")

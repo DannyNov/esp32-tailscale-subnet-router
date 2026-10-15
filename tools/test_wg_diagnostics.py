@@ -119,6 +119,7 @@ static inline int xTaskCreateWithCaps(void (*fn)(void *), const char *name,
 #include <stdint.h>
 static inline int64_t esp_timer_get_time(void) { return 10000000; }
 ''')
+        (stub / 'esp_err.h').write_text('#pragma once\n#define ESP_ERR_NO_MEM 0x101\n')
         (stub / 'esp_log.h').write_text('''#pragma once
 #include <stdio.h>
 #define ESP_LOGI(tag, fmt, ...) printf("%s " fmt "\\n", tag, ##__VA_ARGS__)
@@ -209,7 +210,25 @@ int main(void) {
     assert(wg9_counts[WG9_STA_RETURNED_OK] == 1);
     wg9_direct_udp_begin(); wg9_direct_udp_end(-1);
     assert(wg9_counts[WG9_NO_STA_OUTPUT] == 1);
-    wg9_report();\n    wg_diag_wake(1); wg_diag_wake(0); assert(wake_counts[0] == 1 && wake_counts[1] == 1);\n    wg_diag_time(D_TX_CRYPTO, 1000); assert(times[D_TX_CRYPTO].sum == 1000);
+    wg9_report();
+    wg9_direct_udp_begin();
+    wg10_sta_pbuf_shape(0);
+    wg10_wifi_driver_result(0x101, 1);
+    wg9_sta_link_result(-1);
+    wg9_direct_udp_end(-1);
+    assert(wg10_counts[WG10_DRIVER_NOMEM] == 1);
+    wg9_direct_udp_begin();
+    wg10_sta_pbuf_shape(1);
+    wg9_sta_link_result(-1);
+    wg9_direct_udp_end(-1);
+    assert(wg10_counts[WG10_NO_DRIVER_CHAIN] == 1);
+    wg9_direct_udp_begin();
+    wg10_sta_pbuf_shape(0);
+    wg10_wifi_driver_result(0, 0);
+    wg9_sta_link_result(-1);
+    wg9_direct_udp_end(-1);
+    assert(wg10_counts[WG10_DRIVER_OK] == 1);
+    wg10_report();\n    wg_diag_wake(1); wg_diag_wake(0); assert(wake_counts[0] == 1 && wake_counts[1] == 1);\n    wg_diag_time(D_TX_CRYPTO, 1000); assert(times[D_TX_CRYPTO].sum == 1000);
     wg_diag_time(D_RX_DECRYPT, 850); wg_diag_time(D_RX_HS, 123000);
     assert(times[D_RX_DECRYPT].sum == 850 && times[D_RX_HS].max == 123000);\n    wg_diag_start(); wg_diag_report(); wg_diag_report();
     puts("PASS: concurrent counters, source isolation/overflow, allocation once, HWM, peer slots, wraparound");

@@ -40,6 +40,9 @@ void wg_diag_queue_config(unsigned cap, unsigned item_size);
 void wg9_direct_udp_begin(void);
 void wg9_direct_udp_end(int err);
 void wg9_sta_link_result(int err);
+/* wgopt10: called only from raw Wi-Fi TX wraps / STA shape observation. */
+void wg10_sta_pbuf_shape(int chained);
+void wg10_wifi_driver_result(int raw_err, int by_ref);
 void wg_diag_start(void);
 void wg_diag_report(void);
 /* wgopt5: low-rate Wi-Fi + task profiling. Called from reporter only. */

@@ -22,6 +22,7 @@
 #include "ap_passive.h"
 /* Implemented by the linked diagnostics component, no dependency on keys. */
 extern void wg9_sta_link_result(int err);
+extern void wg10_sta_pbuf_shape(int chained);
 
 /* MTU-management knobs published by tailscale_mtu.c. ap_mss_clamp is
  * the cap we enforce on every TCP SYN crossing the AP interface (so
@@ -247,6 +248,7 @@ static err_t sta_linkoutput_hook(struct netif *netif, struct pbuf *p)
     if (acl_drops(acl_check_and_tap(ACL_FROM_ESP, p, false))) { return ERR_OK; }
     /* wgopt9: observe the *actual* lower STA linkoutput result; do not
      * change the result or any bytes of the transmitted packet. */
+    wg10_sta_pbuf_shape(p && p->next != NULL);
     err_t tx_result = original_sta_linkoutput ? original_sta_linkoutput(netif, p) : ERR_VAL;
     wg9_sta_link_result(tx_result);
     return tx_result;
