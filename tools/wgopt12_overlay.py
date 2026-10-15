@@ -25,20 +25,17 @@ typedef struct {
 } wg12_entry_t;
 static wg12_entry_t wg12_q[WG12_QCAP];
 static uint8_t wg12_head, wg12_count;
-static bool wg12_running, wg12_enabled;
+static bool wg12_running, wg12_enabled, wg12_posted;
 static esp_timer_handle_t wg12_timer;
 static portMUX_TYPE wg12_mux = portMUX_INITIALIZER_UNLOCKED;
 static void wg12_flush_cb(void *arg);
 
-static void wg12_arm(void) {
-    if (!wg12_timer || !__atomic_load_n(&wg12_enabled, __ATOMIC_ACQUIRE)) return;
-    esp_err_t e = esp_timer_start_once(wg12_timer, WG12_DELAY_US);
-    if (e != ESP_OK && e != ESP_ERR_INVALID_STATE) {
-        wg12_diag_add(WG12_POSTFAIL);
-        /* Never strand a reference if a timer cannot be scheduled. */
-        if (tcpip_callback(wg12_flush_cb, NULL) != ERR_OK)
-            wg12_diag_add(WG12_POSTFAIL);
-    }
+/* All shared state uses the same mux, including timer-task reads. */
+static bool wg12_is_enabled(void) {
+    portENTER_CRITICAL(&wg12_mux);
+    const bool enabled = wg12_enabled;
+    portEXIT_CRITICAL(&wg12_mux);
+    return enabled;
 }
 static bool wg12_backlogged(void) {
     bool found;
@@ -65,7 +62,6 @@ static bool wg12_enqueue(struct pbuf *p, uint32_t ip, uint16_t port, bool behind
     if (accepted) {
         wg12_diag_add(WG12_ENQ);
         if (behind) wg12_diag_add(WG12_BACKLOG);
-        wg12_arm();
     } else {
         wg12_diag_add(WG12_FULL);
     }
@@ -76,6 +72,7 @@ static void wg12_flush_cb(void *arg) {
     (void)arg;
     wg12_entry_t e = {0};
     portENTER_CRITICAL(&wg12_mux);
+    wg12_posted = false;
     if (wg12_enabled && !wg12_running && wg12_count) {
         e = wg12_q[wg12_head];
         wg12_q[wg12_head].p = NULL;
@@ -88,7 +85,7 @@ static void wg12_flush_cb(void *arg) {
 
     err_t result = ERR_MEM;
     bool tried = false;
-    if (wg12_enabled && s_wg_output_pcb &&
+    if (wg12_is_enabled() && s_wg_output_pcb &&
         esp_timer_get_time() - e.since_us <= WG12_TTL_US) {
         ip_addr_t dest;
         IP_SET_TYPE_VAL(dest, IPADDR_TYPE_V4);
@@ -117,16 +114,22 @@ static void wg12_flush_cb(void *arg) {
     }
     portENTER_CRITICAL(&wg12_mux);
     wg12_running = false;
-    const bool pending = wg12_enabled && wg12_count != 0;
     portEXIT_CRITICAL(&wg12_mux);
-    if (pending) wg12_arm();
 }
 static void wg12_timer_cb(void *arg) {
     (void)arg;
-    if (!__atomic_load_n(&wg12_enabled, __ATOMIC_ACQUIRE)) return;
-    if (tcpip_callback(wg12_flush_cb, NULL) != ERR_OK) {
+    portENTER_CRITICAL(&wg12_mux);
+    const bool post = wg12_enabled && wg12_count && !wg12_running && !wg12_posted;
+    if (post) wg12_posted = true;
+    portEXIT_CRITICAL(&wg12_mux);
+    if (!post) return;
+    /* Unlike tcpip_callback, this never waits for mailbox space.
+     * The periodic timer retries a failed post without stranding refs. */
+    if (tcpip_try_callback(wg12_flush_cb, NULL) != ERR_OK) {
+        portENTER_CRITICAL(&wg12_mux);
+        wg12_posted = false;
+        portEXIT_CRITICAL(&wg12_mux);
         wg12_diag_add(WG12_POSTFAIL);
-        wg12_arm();
     }
 }
 static void wg12_start(void) {
@@ -142,6 +145,12 @@ static void wg12_start(void) {
     portENTER_CRITICAL(&wg12_mux);
     wg12_enabled = true;
     portEXIT_CRITICAL(&wg12_mux);
+    if (esp_timer_start_periodic(wg12_timer, WG12_DELAY_US) != ESP_OK) {
+        portENTER_CRITICAL(&wg12_mux);
+        wg12_enabled = false;
+        portEXIT_CRITICAL(&wg12_mux);
+        wg12_diag_add(WG12_POSTFAIL);
+    }
 }
 /* Stop barrier on TCPIP thread: no posted flush can race draining refs. */
 static void wg12_discard_cb(void *arg) {

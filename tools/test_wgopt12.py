@@ -34,6 +34,9 @@ with TemporaryDirectory(prefix="wgopt12-") as tmp:
     assert "#define WG12_MAX_TRIES 2u" in RETRY_IMPL
     assert "pbuf_ref(p);" in RETRY_IMPL
     assert "pbuf_free(e.p);" in RETRY_IMPL
+    assert "tcpip_try_callback(wg12_flush_cb" in RETRY_IMPL
+    assert "esp_timer_start_periodic" in RETRY_IMPL
+    assert "__atomic_load" not in RETRY_IMPL
     assert "vTaskDelay(" not in RETRY_IMPL
     assert "heap_caps_malloc(" not in RETRY_IMPL
     assert "malloc(" not in RETRY_IMPL
@@ -92,7 +95,7 @@ static esp_err_t esp_timer_create(const esp_timer_create_args_t *a,
     assert(a && a->callback);
     timer_storage.cb = a->callback; *h = &timer_storage; return ESP_OK;
 }
-static esp_err_t esp_timer_start_once(esp_timer_handle_t h, uint64_t us) {
+static esp_err_t esp_timer_start_periodic(esp_timer_handle_t h, uint64_t us) {
     assert(us > 0);
     if (h->running) return ESP_ERR_INVALID_STATE;
     h->running = true; return ESP_OK;
@@ -100,11 +103,24 @@ static esp_err_t esp_timer_start_once(esp_timer_handle_t h, uint64_t us) {
 static esp_err_t esp_timer_stop(esp_timer_handle_t h) {
     h->running = false; return ESP_OK;
 }
-static err_t tcpip_callback(void (*cb)(void *), void *arg) {
-    cb(arg); return ERR_OK;
+static void (*posted_cb)(void *);
+static void *posted_arg;
+static bool fail_post, fail_wait;
+static err_t tcpip_try_callback(void (*cb)(void *), void *arg) {
+    if (fail_post) return ERR_MEM;
+    assert(!posted_cb);
+    posted_cb = cb; posted_arg = arg; return ERR_OK;
+}
+static void dispatch(void) {
+    if (!posted_cb) return;
+    void (*cb)(void *) = posted_cb;
+    void *arg = posted_arg;
+    posted_cb = NULL;
+    cb(arg);
 }
 static err_t tcpip_callback_wait(void (*cb)(void *), void *arg) {
-    cb(arg); return ERR_OK;
+    if (fail_wait) return ERR_MEM;
+    dispatch(); cb(arg); return ERR_OK;
 }
 enum { WG12_ENQ, WG12_DONE, WG12_NOMEM, WG12_DROP, WG12_FULL,
        WG12_STOP, WG12_POSTFAIL, WG12_BACKLOG, WG12_COUNTERS };
@@ -117,9 +133,9 @@ static void wg12_diag_add(unsigned event) {
     suffix = r"""
 static void fire(void) {
     assert(timer_storage.running && timer_storage.cb);
-    timer_storage.running = false;
     mock_us += 3000;
     timer_storage.cb(NULL);
+    dispatch();
 }
 int main(void) {
     wg12_start();
@@ -153,6 +169,43 @@ int main(void) {
     mock_us += 60000;
     fire();
     assert(d.ref == 0 && d.freed == 1 && sent_n == 4);
+    /* Mailbox failure leaves one ref; next periodic tick recovers. */
+    struct pbuf f = {.ref=1, .id=5};
+    assert(wg12_enqueue(&f, 0x01020304, 51820, false));
+    pbuf_free(&f);
+    fail_post = true; fire();
+    assert(f.ref == 1 && metrics[WG12_POSTFAIL] == 1);
+    fail_post = false;
+    timer_storage.cb(NULL);
+    assert(posted_cb && wg12_posted);
+    timer_storage.cb(NULL); /* at most one pending callback */
+    dispatch();
+    assert(f.freed == 1);
+    /* Callback already posted when shutdown begins must not transmit. */
+    struct pbuf g = {.ref=1, .id=6};
+    assert(wg12_enqueue(&g, 0x01020304, 51820, false));
+    pbuf_free(&g);
+    timer_storage.cb(NULL);
+    int before_stop = sent_n;
+    wg12_stop();
+    assert(g.freed == 1 && sent_n == before_stop && !posted_cb);
+    wg12_start();
+    /* Both deferred attempts fail: bounded retries, exactly one release. */
+    struct pbuf h = {.ref=1, .id=7};
+    assert(wg12_enqueue(&h, 0x01020304, 51820, false));
+    pbuf_free(&h);
+    replies[reply_n] = ERR_MEM; replies[reply_n+1] = ERR_MEM;
+    fire(); fire();
+    assert(h.freed == 1 && !wg12_backlogged());
+    /* Stop fallback drains queued refs even if barrier allocation fails.
+     * A late callback sees disabled state and cannot send or double-free. */
+    struct pbuf i = {.ref=1, .id=8};
+    assert(wg12_enqueue(&i, 0x01020304, 51820, false));
+    pbuf_free(&i); timer_storage.cb(NULL);
+    before_stop = sent_n; fail_wait = true;
+    wg12_stop(); dispatch(); fail_wait = false;
+    assert(i.freed == 1 && sent_n == before_stop);
+    wg12_start();
     /* Capacity is exactly eight; failure doesn't acquire a reference. */
     struct pbuf q[9] = {0};
     for (int i = 0; i < 9; i++) { q[i].id=10+i; q[i].ref=1; }
@@ -166,7 +219,7 @@ int main(void) {
     wg12_stop();
     for (int i = 0; i < 8; i++) assert(q[i].freed == 1);
     assert(!timer_storage.running && !wg12_backlogged());
-    assert(metrics[WG12_STOP] == 8);
+    assert(metrics[WG12_STOP] == 10);
     puts("PASS: actual wgopt12 queue, refcounts, FIFO, retry, expiry, overflow, shutdown");
     return 0;
 }
