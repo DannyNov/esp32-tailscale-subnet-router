@@ -103,8 +103,8 @@ static esp_err_t esp_timer_stop(esp_timer_handle_t h) {
 static err_t tcpip_callback(void (*cb)(void *), void *arg) {
     cb(arg); return ERR_OK;
 }
-static err_t tcpip_callback_with_block(void (*cb)(void *), void *arg, int wait) {
-    assert(wait == 1); cb(arg); return ERR_OK;
+static err_t tcpip_callback_wait(void (*cb)(void *), void *arg) {
+    cb(arg); return ERR_OK;
 }
 enum { WG12_ENQ, WG12_DONE, WG12_NOMEM, WG12_DROP, WG12_FULL,
        WG12_STOP, WG12_POSTFAIL, WG12_BACKLOG, WG12_COUNTERS };
