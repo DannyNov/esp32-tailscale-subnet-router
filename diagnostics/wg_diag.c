@@ -80,6 +80,15 @@ void wg10_wifi_driver_result(int raw_err, int by_ref) {
     if (raw_err && raw_err != ESP_ERR_NO_MEM)
         add(&wg10_counts[WG10_OTHER_RAW_ERROR], 1);
 }
+/* Driver attribution is valid only in the current scoped direct send. */
+int wg10_wifi_nomem_in_scope(void) {
+    return __atomic_load_n(&wg9_tx_owner, __ATOMIC_ACQUIRE) ==
+               xTaskGetCurrentTaskHandle() &&
+           __atomic_load_n(&wg9_sta_seen, __ATOMIC_RELAXED) &&
+           __atomic_load_n(&wg9_sta_first_error, __ATOMIC_RELAXED) == -1 &&
+           __atomic_load_n(&wg10_wifi_seen, __ATOMIC_RELAXED) &&
+           __atomic_load_n(&wg10_wifi_raw, __ATOMIC_RELAXED) == ESP_ERR_NO_MEM;
+}
 void wg9_sta_link_result(int err) {
     if (__atomic_load_n(&wg9_tx_owner, __ATOMIC_ACQUIRE) !=
         xTaskGetCurrentTaskHandle()) return;
@@ -364,6 +373,26 @@ static void wg10_report(void) {
         (unsigned long)delta[WG10_COPY_CALLS],
         (unsigned long)delta[WG10_OTHER_RAW_ERROR]);
 }
+/* wgopt12: bounded counters, reported off the packet path. */
+static uint32_t wg12_counts[WG12_COUNTERS];
+void wg12_diag_add(unsigned event) {
+    if (event < WG12_COUNTERS)
+        __atomic_fetch_add(&wg12_counts[event], 1u, __ATOMIC_RELAXED);
+}
+static void wg12_report(void) {
+    static uint32_t prev[WG12_COUNTERS];
+    uint32_t delta[WG12_COUNTERS];
+    for (unsigned i = 0; i < WG12_COUNTERS; i++) {
+        uint32_t current = __atomic_load_n(&wg12_counts[i], __ATOMIC_RELAXED);
+        delta[i] = current - prev[i];
+        prev[i] = current;
+    }
+    ESP_LOGW("WG12_TX", "queued=%lu retry_ok=%lu retry_nomem=%lu drop=%lu queue_full=%lu shutdown_free=%lu scheduling_error=%lu deferred_behind=%lu",
+        (unsigned long)delta[WG12_ENQ], (unsigned long)delta[WG12_DONE],
+        (unsigned long)delta[WG12_NOMEM], (unsigned long)delta[WG12_DROP],
+        (unsigned long)delta[WG12_FULL], (unsigned long)delta[WG12_STOP],
+        (unsigned long)delta[WG12_POSTFAIL], (unsigned long)delta[WG12_BACKLOG]);
+}
 static void reporter(void *arg) {
     (void)arg;
     for (;;) {
@@ -374,6 +403,7 @@ static void reporter(void *arg) {
         wg7_report();
         wg9_report();
         wg10_report();
+        wg12_report();
     }
 }
 void wg_diag_start(void) {
