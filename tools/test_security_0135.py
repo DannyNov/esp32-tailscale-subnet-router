@@ -34,8 +34,17 @@ stop = '    /* Store socket fd'
 assert derp[derp.index(start):derp.index(stop)] == original[original.index(start):original.index(stop)]
 assert 'MBEDTLS_SSL_VERIFY_REQUIRED' in derp and 'esp_crt_bundle_attach' in derp
 assert 'mbedtls_ssl_set_hostname(&ml->derp.ssl, tls_name)' in derp
-for name in ('ml_coord.c', 'ml_netcheck.c', 'microlink.c'):
+for name in ('ml_coord.c', 'ml_netcheck.c'):
     assert (src / 'src' / name).read_bytes() == (ROOT / 'external/microlink/components/microlink/src' / name).read_bytes()
+# wgopt7 adds only queue geometry reporting in generated microlink.c.
+# Strip the two exact probes, then require byte-for-byte upstream identity.
+generated_init = (src / 'src/microlink.c').read_text()
+assert generated_init.startswith('#include "wg_diag.h"\\n'.replace('\\n', '\n'))
+generated_init = generated_init.removeprefix('#include "wg_diag.h"\n')
+probe = '    wg_diag_queue_config(ML_WG_RX_QUEUE_DEPTH, sizeof(ml_rx_packet_t));\n'
+assert generated_init.count(probe) == 1
+generated_init = generated_init.replace(probe, '')
+assert generated_init == (ROOT / 'external/microlink/components/microlink/src/microlink.c').read_text()
 assert 'body_len < 512 ? 512 : body_len' in coord
 assert 'GOAWAY' in coord and 'RST_STREAM' in coord and 'END_STREAM' in coord
 assert 'wireguard_expire_keys(peer)' in wif
