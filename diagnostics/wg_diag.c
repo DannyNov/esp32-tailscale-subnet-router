@@ -25,6 +25,59 @@ static uint32_t source_overflow;
 static uint32_t wg4_tx[2][3]; /* success, error, successful bytes */
 /* wgopt8: exact direct results, drained by the reporter; 72 bytes total. */
 static uint32_t wg8_direct_result[18];
+/* wgopt9: actual STA linkoutput return, only during this task's
+ * synchronous direct WG UDP send. No packet payload/peer information.
+ * ERR_MEM before a STA callback may also mean a different outgoing netif.
+ * This state is process-local, bounded, and not retained after each call. */
+static TaskHandle_t wg9_tx_owner;
+static uint32_t wg9_sta_seen;
+static int32_t wg9_sta_first_error;
+enum {
+    WG9_TOTAL_ERRMEM, WG9_STA_ERRMEM, WG9_STA_OTHER_ERROR,
+    WG9_STA_RETURNED_OK, WG9_NO_STA_OUTPUT, WG9_SCOPE_COLLISION,
+    WG9_STA_ALL_ERRORS, WG9_MAX_COUNTER
+};
+static uint32_t wg9_counts[WG9_MAX_COUNTER];
+static uint32_t wg9_dma_min_largest_at_err; /* boot-lifetime minimum, zero=none */
+void wg9_direct_udp_begin(void) {
+    TaskHandle_t self = xTaskGetCurrentTaskHandle();
+    if (__atomic_load_n(&wg9_tx_owner, __ATOMIC_RELAXED)) {
+        add(&wg9_counts[WG9_SCOPE_COLLISION], 1);
+        return;
+    }
+    __atomic_store_n(&wg9_sta_seen, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&wg9_sta_first_error, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&wg9_tx_owner, self, __ATOMIC_RELEASE);
+}
+void wg9_sta_link_result(int err) {
+    if (__atomic_load_n(&wg9_tx_owner, __ATOMIC_ACQUIRE) !=
+        xTaskGetCurrentTaskHandle()) return;
+    __atomic_store_n(&wg9_sta_seen, 1, __ATOMIC_RELAXED);
+    if (err != 0) {
+        add(&wg9_counts[WG9_STA_ALL_ERRORS], 1);
+        int32_t expected = 0;
+        __atomic_compare_exchange_n(&wg9_sta_first_error, &expected, err, 0,
+                                    __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+    }
+}
+void wg9_direct_udp_end(int err) {
+    TaskHandle_t self = xTaskGetCurrentTaskHandle();
+    if (__atomic_load_n(&wg9_tx_owner, __ATOMIC_ACQUIRE) != self) return;
+    const uint32_t seen = __atomic_load_n(&wg9_sta_seen, __ATOMIC_RELAXED);
+    const int32_t lower_err = __atomic_load_n(&wg9_sta_first_error, __ATOMIC_RELAXED);
+    if (err == -1) { /* lwIP ERR_MEM */
+        add(&wg9_counts[WG9_TOTAL_ERRMEM], 1);
+        add(&wg9_counts[!seen ? WG9_NO_STA_OUTPUT :
+            lower_err == -1 ? WG9_STA_ERRMEM :
+            lower_err ? WG9_STA_OTHER_ERROR : WG9_STA_RETURNED_OK], 1);
+        const uint32_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_DMA);
+        uint32_t old = __atomic_load_n(&wg9_dma_min_largest_at_err, __ATOMIC_RELAXED);
+        while ((!old || largest < old) &&
+               !__atomic_compare_exchange_n(&wg9_dma_min_largest_at_err,
+                   &old, largest, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {}
+    }
+    __atomic_store_n(&wg9_tx_owner, NULL, __ATOMIC_RELEASE);
+}
 static uint32_t wg4_qpeak[3];
 /* wgopt7: one-time queue geometry, atomic direct RX allocation buckets. */
 static uint32_t wg7_queue_cap, wg7_queue_item_size, wg7_rx_alloc[3];
@@ -228,6 +281,28 @@ static void wg7_report(void) {
         (unsigned long)delta[0], (unsigned long)delta[1],
         (unsigned long)delta[2]);
 }
+static void wg9_report(void) {
+    static uint32_t prev[WG9_MAX_COUNTER];
+    uint32_t delta[WG9_MAX_COUNTER];
+    for (unsigned i = 0; i < WG9_MAX_COUNTER; ++i) {
+        uint32_t n = __atomic_load_n(&wg9_counts[i], __ATOMIC_RELAXED);
+        delta[i] = n - prev[i];
+        prev[i] = n;
+    }
+    const uint32_t dma = MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL;
+    ESP_LOGW("WG9_TXPATH",
+        "errmem=%lu sta_returned_errmem=%lu sta_other_error=%lu sta_returned_ok=%lu no_sta_callback=%lu scope_collision=%lu sta_all_errors=%lu dma_free=%u dma_largest=%u dma_err_largest_min_boot=%lu",
+        (unsigned long)delta[WG9_TOTAL_ERRMEM],
+        (unsigned long)delta[WG9_STA_ERRMEM],
+        (unsigned long)delta[WG9_STA_OTHER_ERROR],
+        (unsigned long)delta[WG9_STA_RETURNED_OK],
+        (unsigned long)delta[WG9_NO_STA_OUTPUT],
+        (unsigned long)delta[WG9_SCOPE_COLLISION],
+        (unsigned long)delta[WG9_STA_ALL_ERRORS],
+        (unsigned)heap_caps_get_free_size(dma),
+        (unsigned)heap_caps_get_largest_free_block(dma),
+        (unsigned long)__atomic_load_n(&wg9_dma_min_largest_at_err, __ATOMIC_RELAXED));
+}
 static void reporter(void *arg) {
     (void)arg;
     for (;;) {
@@ -236,6 +311,7 @@ static void reporter(void *arg) {
         wg4_report();
         wg5_report();
         wg7_report();
+        wg9_report();
     }
 }
 void wg_diag_start(void) {

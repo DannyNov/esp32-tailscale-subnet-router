@@ -1,7 +1,7 @@
-name: Build wgopt8 direct TX error diagnostics (no deployment)
+name: Build wgopt9 TX ERR_MEM attribution (no deployment)
 on:
   push:
-    branches: [diagnostic/wgopt8-tx-errors-v0135]
+    branches: [diagnostic/wgopt9-tx-errmem-v0135]
   workflow_dispatch:
 permissions:
   contents: read
@@ -34,6 +34,7 @@ jobs:
           python tools/test_wgopt4.py
           python tools/test_wgopt5.py
           python tools/test_wgopt6.py
+          python tools/test_wgopt9.py
           python tools/test_snapshot_overlay.py
           python tools/test_security_0135.py
           python -m pip install paramiko requests
@@ -45,10 +46,10 @@ jobs:
       - name: Validate image and collect provenance
         run: |
           mkdir -p artifacts
-          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgopt8-esp32-s3-ota.bin
+          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgopt9-esp32-s3-ota.bin
           cp .pio/build/esp32-s3/diagnostic-components/*.json artifacts/
           cp sdkconfig.esp32-s3 artifacts/sdkconfig-built.txt
-          cp docs/WGOPT8-TX-ERRORS-RU.md artifacts/README.md
+          cp docs/WGOPT9-TX-ERRMEM-RU.md artifacts/README.md
           python tools/validate_snapshot_image.py
           python tools/diagnostic_provenance.py
           pio pkg list -e esp32-s3 > artifacts/build-dependencies.txt
@@ -56,6 +57,6 @@ jobs:
           sha256sum *.bin > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: esp32-s3-0.1.35-tuya-wgopt8
+          name: esp32-s3-0.1.35-tuya-wgopt9
           path: artifacts/
           if-no-files-found: error

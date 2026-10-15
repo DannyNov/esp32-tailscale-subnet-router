@@ -105,6 +105,8 @@ static inline unsigned uxQueueMessagesWaiting(void *q) { return *(unsigned *)q; 
         (stub / 'freertos/task.h').write_text('''#pragma once
 static inline void vTaskDelay(unsigned n) { (void)n; }
 static inline unsigned uxTaskGetStackHighWaterMark(void *p) { (void)p; return 2048; }
+typedef void *TaskHandle_t;
+static inline TaskHandle_t xTaskGetCurrentTaskHandle(void) { return (TaskHandle_t)(uintptr_t)1; }
 ''')
         (stub / 'freertos/idf_additions.h').write_text('''#pragma once
 static inline int xTaskCreateWithCaps(void (*fn)(void *), const char *name,
@@ -126,6 +128,7 @@ static inline int64_t esp_timer_get_time(void) { return 10000000; }
 #define MALLOC_CAP_INTERNAL 1
 #define MALLOC_CAP_8BIT 2
 #define MALLOC_CAP_SPIRAM 4
+#define MALLOC_CAP_DMA 8
 static inline unsigned heap_caps_get_free_size(unsigned c) { (void)c; return 40000; }
 static inline unsigned heap_caps_get_minimum_free_size(unsigned c) { (void)c; return 2800; }
 static inline unsigned heap_caps_get_largest_free_block(unsigned c) { (void)c; return 20000; }
@@ -199,7 +202,14 @@ int main(void) {
     assert(load(&wg8_direct_result[17]) == 2);
     wg4_report();
     for (unsigned e=0; e<18; e++) assert(load(&wg8_direct_result[e]) == 0);
-    wg4_report(); assert(wg4_qpeak[0] == 0);\n    wg_diag_wake(1); wg_diag_wake(0); assert(wake_counts[0] == 1 && wake_counts[1] == 1);\n    wg_diag_time(D_TX_CRYPTO, 1000); assert(times[D_TX_CRYPTO].sum == 1000);
+    wg4_report(); assert(wg4_qpeak[0] == 0);
+    wg9_direct_udp_begin(); wg9_sta_link_result(-1); wg9_direct_udp_end(-1);
+    assert(wg9_counts[WG9_TOTAL_ERRMEM] == 1 && wg9_counts[WG9_STA_ERRMEM] == 1);
+    wg9_direct_udp_begin(); wg9_sta_link_result(0); wg9_direct_udp_end(-1);
+    assert(wg9_counts[WG9_STA_RETURNED_OK] == 1);
+    wg9_direct_udp_begin(); wg9_direct_udp_end(-1);
+    assert(wg9_counts[WG9_NO_STA_OUTPUT] == 1);
+    wg9_report();\n    wg_diag_wake(1); wg_diag_wake(0); assert(wake_counts[0] == 1 && wake_counts[1] == 1);\n    wg_diag_time(D_TX_CRYPTO, 1000); assert(times[D_TX_CRYPTO].sum == 1000);
     wg_diag_time(D_RX_DECRYPT, 850); wg_diag_time(D_RX_HS, 123000);
     assert(times[D_RX_DECRYPT].sum == 850 && times[D_RX_HS].max == 123000);\n    wg_diag_start(); wg_diag_report(); wg_diag_report();
     puts("PASS: concurrent counters, source isolation/overflow, allocation once, HWM, peer slots, wraparound");
