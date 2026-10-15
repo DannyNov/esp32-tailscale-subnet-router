@@ -53,5 +53,5 @@ assert association.index('mac_deny_is_blocked(event->mac)') < association.index(
 remembered = web.split('static esp_err_t dhcp_remembered_handler(', 1)[1].split('static const httpd_uri_t uri_dhcp_remembered', 1)[0]
 assert 'cJSON_AddNumberToObject(entry, "last_seen", (double)r->last_seen);' in remembered
 assert 'dhcp_last_seen_activity(' not in remembered
-assert 'set(PROJECT_VER "0.1.35-tuya-wgopt10")' in (root / 'CMakeLists.txt').read_text()
+assert 'set(PROJECT_VER "0.1.35-tuya-wgopt11")' in (root / 'CMakeLists.txt').read_text()
 print('PASS: real association wiring, deny filtering, read-only remembered API with Unix seconds, candidate version')

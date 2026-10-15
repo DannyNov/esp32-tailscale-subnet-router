@@ -1,7 +1,7 @@
-name: Build wgopt10 raw Wi-Fi TX return diagnostics (no deployment)
+name: Build wgopt11 static TX 36 experiment (no deployment)
 on:
   push:
-    branches: [diagnostic/wgopt10-wifi-tx-origin-v0135]
+    branches: [optimization/wgopt11-static-tx36-v0135]
   workflow_dispatch:
 permissions:
   contents: read
@@ -36,6 +36,7 @@ jobs:
           python tools/test_wgopt6.py
           python tools/test_wgopt9.py
           python tools/test_wgopt10.py
+          python tools/test_wgopt11.py
           python tools/test_snapshot_overlay.py
           python tools/test_security_0135.py
           python -m pip install paramiko requests
@@ -47,10 +48,10 @@ jobs:
       - name: Validate image and collect provenance
         run: |
           mkdir -p artifacts
-          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgopt10-esp32-s3-ota.bin
+          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgopt11-esp32-s3-ota.bin
           cp .pio/build/esp32-s3/diagnostic-components/*.json artifacts/
           cp sdkconfig.esp32-s3 artifacts/sdkconfig-built.txt
-          cp docs/WGOPT10-WIFI-TX-ORIGIN-RU.md artifacts/README.md
+          cp docs/WGOPT11-STATIC-TX36-RU.md artifacts/README.md
           python tools/validate_snapshot_image.py
           python tools/diagnostic_provenance.py
           pio pkg list -e esp32-s3 > artifacts/build-dependencies.txt
@@ -58,6 +59,6 @@ jobs:
           sha256sum *.bin > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: esp32-s3-0.1.35-tuya-wgopt10
+          name: esp32-s3-0.1.35-tuya-wgopt11
           path: artifacts/
           if-no-files-found: error
