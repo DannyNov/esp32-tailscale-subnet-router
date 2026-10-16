@@ -127,7 +127,8 @@ int main(void) {
     cc = shutil.which("cc")
     if not cc:
         raise RuntimeError("wgopt5 requires host C compiler")
-    cmd = [cc, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+    # Zig's optimized cc mode can define NDEBUG: all fixture oracles must run.
+    cmd = [cc, "-std=c11", "-O2", "-UNDEBUG", "-Wall", "-Wextra", "-Werror",
            "-I"+str(stub), str(test), str(src / "wg5_diag.c"), "-o", str(tmp / "test")]
     subprocess.run(cmd, check=True)
     subprocess.run([str(tmp / "test")], check=True)

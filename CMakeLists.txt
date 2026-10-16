@@ -21,6 +21,13 @@ execute_process(COMMAND "${Python3_EXECUTABLE}"
 if(NOT _diag_result EQUAL 0)
     message(FATAL_ERROR "Pinned diagnostic overlay preparation failed")
 endif()
+execute_process(COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_LIST_DIR}/tools/idf61_compat_overlay.py"
+    --component "${_diag_components}/microlink" --sdk-root "$ENV{IDF_PATH}"
+    RESULT_VARIABLE _compat_result)
+if(NOT _compat_result EQUAL 0)
+    message(FATAL_ERROR "Pinned SDK6.1 compatibility overlay failed")
+endif()
 set(EXTRA_COMPONENT_DIRS
     "${_diag_components}/microlink"
     "${_diag_components}/microlink/components/wireguard_lwip"

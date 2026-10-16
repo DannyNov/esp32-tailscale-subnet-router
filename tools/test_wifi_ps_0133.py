@@ -31,10 +31,10 @@ for path in protected:
     old = subprocess.check_output(['git', 'show', f'bd0a9c0dd2e0109544a6aa2a441e92e2670df62a:{path}'], cwd=root)
     current = (root / path).read_bytes().replace(b'\r\n', b'\n')
     if path == 'platformio.ini':
-        # Diagnostic build pins the exact platform used by the original CI.
+        # This experiment pins SDK6.1; preserve every other protected byte.
         # All hardware/network/build flags remain byte-identical.
-        assert current.count(b'platform = espressif32@6.13.0') == 1
-        current = current.replace(b'platform = espressif32@6.13.0',
+        assert current.count(b'platform = espressif32@7.1.3') == 1
+        current = current.replace(b'platform = espressif32@7.1.3',
                                   b'platform = espressif32@^6.4.0')
     assert current == old.replace(b'\r\n', b'\n'), path
 print('PASS: PS boot/API/UI source contracts and unchanged protected production files; runtime pending hardware')
