@@ -5,7 +5,10 @@ err_t tsr_etharp_add_static_entry(struct netif *netif, const ip4_addr_t *ip, con
 {
     LWIP_ASSERT_CORE_LOCKED();
     if (!netif || !ip || !mac) return ERR_ARG;
-    return etharp_update_arp_entry(netif, ip, mac, ETHARP_FLAG_TRY_HARD | ETHARP_FLAG_STATIC_ENTRY);
+    /* IDF6 lwIP takes a mutable pointer and copies the address synchronously.
+     * Keep our caller's const contract without casting away const. */
+    struct eth_addr address = *mac;
+    return etharp_update_arp_entry(netif, ip, &address, ETHARP_FLAG_TRY_HARD | ETHARP_FLAG_STATIC_ENTRY);
 }
 err_t tsr_etharp_remove_static_entry(struct netif *netif, const ip4_addr_t *ip)
 {
