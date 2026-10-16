@@ -46,7 +46,11 @@ with TemporaryDirectory(prefix="wgopt2-") as temp:
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <arpa/inet.h>
+#endif
 typedef struct { int t; uint32_t u_addr; } ip_addr_t;
 #define IPADDR_TYPE_V4 4
 #define IP_SET_TYPE_VAL(addr, type) ((addr).t = (type))
@@ -114,7 +118,8 @@ int main(void) {
     source.write_text(c_source)
     cc = shutil.which("cc")
     assert cc, "Host C compiler is required for wgopt2 acceptance tests"
-    subprocess.run([cc,"-std=c11","-Wall","-Wextra","-Werror",str(source),"-o",str(exe)],check=True)
+    subprocess.run([cc,"-std=c11","-Wall","-Wextra","-Werror","-UNDEBUG",str(source),"-o",str(exe)]
+                   + (["-lws2_32"] if os.name == "nt" else []),check=True)
     subprocess.run([str(exe)],check=True)
 
 print("PASS: wgopt2 generated-copy and ingress/forwarding ownership contracts")

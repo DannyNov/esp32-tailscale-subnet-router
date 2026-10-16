@@ -2,6 +2,8 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import subprocess
+import os
+import shlex
 from prepare_wg_diagnostics import ROOT, prepare
 from wgopt12_overlay import RETRY_IMPL
 
@@ -227,7 +229,7 @@ int main(void) {
     f = output / "wgopt12_mock.c"
     exe = output / "wgopt12_mock"
     f.write_text(prefix + RETRY_IMPL + suffix)
-    subprocess.run(["gcc", "-std=c11", "-Wall", "-Wextra", "-o", str(exe), str(f)],
+    subprocess.run(shlex.split(os.environ.get("CC", "gcc")) + ["-std=c11", "-Wall", "-Wextra", "-UNDEBUG", "-o", str(exe), str(f)],
                    check=True)
     subprocess.run([str(exe)], check=True)
 print("PASS: wgopt12 generated source contracts and deterministic host C replay")

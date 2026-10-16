@@ -25,6 +25,9 @@ class SshHostKeyTests(unittest.TestCase):
         self.system_file.write_text("", encoding="utf-8")
         self.custom_file.write_text("", encoding="utf-8")
         self.transport = Mock()
+        # This offline fixture models ordinary SSH, without GSS key exchange.
+        # An unspecified Mock attribute is truthy and bypasses host-key checks.
+        self.transport.gss_kex_used = False
         self.transport.get_remote_server_key.return_value = self.server_key
         self.transport.get_security_options.return_value.key_types = [
             "rsa-sha2-512", "rsa-sha2-256", "ssh-rsa"
