@@ -27,7 +27,7 @@
 #include "esp_app_desc.h"
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
-#include "mbedtls/sha256.h"
+#include "telemetry_hash.h"
 #include "nvs.h"
 
 #include "freertos/FreeRTOS.h"
@@ -89,38 +89,12 @@ static void set_defaults(void)
     s_state.banner_seen_ver[0] = 0;
 }
 
-static void compute_device_hash(void)
+static bool compute_device_hash(void)
 {
     uint8_t mac[6] = {0};
-    esp_efuse_mac_get_default(mac);
-
-    static const char salt[] = "esp32-tailscale-router-v1";
-    uint8_t input[6 + sizeof(salt) - 1];
-    memcpy(input, mac, 6);
-    memcpy(input + 6, salt, sizeof(salt) - 1);
-
-    uint8_t digest[32];
-    mbedtls_sha256(input, sizeof(input), digest, 0);
-
-    for (int i = 0; i < 8; i++) {
-        snprintf(s_state.device_hash + i * 2, 3, "%02x", digest[i]);
-    }
-    s_state.device_hash[TELEMETRY_DH_HEX_LEN] = 0;
-
-    /* Append a 2-hex integrity check = SHA-256(check_salt || the 16-hex id)[0],
-     * so the telemetry collector can drop random/garbage POSTs. Friction, NOT
-     * auth — this firmware is open source. The check_salt MUST match the
-     * worker's dhCheck() salt byte-for-byte (distinct from the id salt above). */
-    static const char check_salt[] = "esp32-tailscale-v1";
-    uint8_t cin[sizeof(check_salt) - 1 + TELEMETRY_DH_HEX_LEN];
-    memcpy(cin, check_salt, sizeof(check_salt) - 1);
-    memcpy(cin + sizeof(check_salt) - 1, s_state.device_hash, TELEMETRY_DH_HEX_LEN);
-    uint8_t cdig[32];
-    mbedtls_sha256(cin, sizeof(cin), cdig, 0);
-    snprintf(s_state.device_hash + TELEMETRY_DH_HEX_LEN, 3, "%02x", cdig[0]);
-    s_state.device_hash[TELEMETRY_DH_FULL_LEN] = 0;
+    if (esp_efuse_mac_get_default(mac) != ESP_OK) return false;
+    return telemetry_hash_from_mac(mac, s_state.device_hash);
 }
-
 static const char *chip_model_str(void)
 {
     esp_chip_info_t info;
@@ -477,7 +451,12 @@ void telemetry_init(void)
     if (s_task) return;
 
     set_defaults();
-    compute_device_hash();
+    if (!compute_device_hash()) {
+        s_state.enabled = false;
+        snprintf(s_state.last_status, sizeof(s_state.last_status), "device hash failed");
+        ESP_LOGE(TAG, "device hash failed; telemetry sender not started");
+        return;
+    }
     load_nvs();
 
     s_just_flashed = detect_just_flashed_from_nvs();
