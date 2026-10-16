@@ -15,8 +15,10 @@ jobs:
       matrix:
         replica: [1, 2]
     env:
-      PLATFORMIO_CORE_DIR: ${{ github.workspace }}/pio-${{ matrix.replica }}
-      PIP_CACHE_DIR: ${{ github.workspace }}/pip-${{ matrix.replica }}
+      # Keep SDK packages outside project sources: PlatformIO otherwise
+      # interprets SDK relative paths as children of src_dir=main.
+      PLATFORMIO_CORE_DIR: ${{ github.workspace }}/../pio-${{ matrix.replica }}
+      PIP_CACHE_DIR: ${{ github.workspace }}/../pip-${{ matrix.replica }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
