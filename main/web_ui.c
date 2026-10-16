@@ -24,6 +24,7 @@
 #include "web_ui.h"
 #include "peer_dns.h"
 #include "tailscale_config.h"
+#include "tailscale_snapshot.h"
 #include "tailscale_mtu.h"
 #include "nvs_params.h"
 #include "microlink.h"
@@ -71,6 +72,30 @@ extern volatile int ap_connect;
 extern volatile int connect_count;
 
 static const char *TAG = "web_ui";
+
+/* Snapshot JSON nodes are attached immediately: root owns all successful
+ * allocations, including on the error path. These checks cover the new
+ * snapshot sections; the other existing JSON sections are unchanged. */
+#define SNAPSHOT_JSON_CHECK(expression) do { \
+    if (!(expression)) { \
+        cJSON_Delete(root); \
+        httpd_resp_send_500(req); \
+        return ESP_ERR_NO_MEM; \
+    } \
+} while (0)
+
+static cJSON *snapshot_json_array_object(cJSON *array)
+{
+    cJSON *item = cJSON_CreateObject();
+    if (!item) return NULL;
+    if (!cJSON_AddItemToArray(array, item)) {
+        cJSON_Delete(item);
+        return NULL;
+    }
+    return item;
+}
+
+
 
 /* index.html is generated as a gzipped C source by main/CMakeLists.txt
  * via the gen_index_html_gz.py helper. Stored compressed (≈5× smaller
@@ -355,57 +380,36 @@ static esp_err_t status_handler(httpd_req_t *req)
         }
     }
 
-    /* Tailscale (microlink) — runtime state from tailscale_config.h.
-     * tailscale_is_connected() polls microlink + refreshes the cached
-     * tunnel_ip; we use its return value over the stale bool global. */
-    bool ts_connected = tailscale_is_connected();
-    cJSON *ts = cJSON_CreateObject();
-    cJSON_AddBoolToObject  (ts, "enabled",   tailscale_enabled != 0);
-    cJSON_AddBoolToObject  (ts, "connected", ts_connected);
-    if (tailscale_hostname)         cJSON_AddStringToObject(ts, "hostname",         tailscale_hostname);
-    if (tailscale_advertise_routes) cJSON_AddStringToObject(ts, "advertise_routes", tailscale_advertise_routes);
-    if (tailscale_tunnel_ip) {
+    /* Tailscale (microlink) — task-context lifetime-safe snapshot. */
+    tailscale_status_snapshot_t ts_snapshot;
+    bool ts_has_snapshot = tailscale_snapshot_status(&ts_snapshot);
+    bool ts_connected = ts_has_snapshot && ts_snapshot.connected;
+    cJSON *ts = cJSON_AddObjectToObject(root, "tailscale");
+    SNAPSHOT_JSON_CHECK(ts);
+    SNAPSHOT_JSON_CHECK(cJSON_AddBoolToObject  (ts, "enabled",   tailscale_enabled != 0));
+    SNAPSHOT_JSON_CHECK(cJSON_AddBoolToObject  (ts, "connected", ts_connected));
+    if (tailscale_hostname)         SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(ts, "hostname",         tailscale_hostname));
+    if (tailscale_advertise_routes) SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(ts, "advertise_routes", tailscale_advertise_routes));
+    if (ts_has_snapshot && ts_snapshot.vpn_ip) {
         char buf[16];
-        ip4_to_str(tailscale_tunnel_ip, buf, sizeof buf);
-        cJSON_AddStringToObject(ts, "tunnel_ip", buf);
+        ip4_hbo_to_str(ts_snapshot.vpn_ip, buf, sizeof buf);
+        SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(ts, "tunnel_ip", buf));
     }
     if (tailscale_exit_node_ip) {
         char buf[16];
         ip4_hbo_to_str(tailscale_exit_node_ip, buf, sizeof buf);
-        cJSON_AddStringToObject(ts, "exit_node_ip", buf);
+        SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(ts, "exit_node_ip", buf));
     }
-    /* Peer count summary — full peer table lives at /api/tailscale.
-     * While we are still in Registering state, microlink_peer_info_t.online
-     * reflects "control-plane echoed this peer" rather than "we have a
-     * verified session" — so it briefly reports everyone online + DERP
-     * before DISCO settles. Suppress that to avoid lying to the SPA. */
-    int online = 0, total = 0;
-    struct microlink_s *ml = tailscale_get_microlink();
-    if (ml) {
-        total = microlink_get_peer_count(ml);
-        if (ts_connected) {
-            for (int i = 0; i < total; i++) {
-                microlink_peer_info_t pi;
-                if (microlink_get_peer_info(ml, i, &pi) == ESP_OK && pi.online) online++;
-            }
-        }
+    SNAPSHOT_JSON_CHECK(cJSON_AddNumberToObject(ts, "peers_online", ts_has_snapshot ? ts_snapshot.peers_online : 0));
+    SNAPSHOT_JSON_CHECK(cJSON_AddNumberToObject(ts, "peers_total",  ts_has_snapshot ? ts_snapshot.peer_count : 0));
+    if (ts_has_snapshot) {
+        const microlink_diag_t *diag = &ts_snapshot.diag;
+        SNAPSHOT_JSON_CHECK(cJSON_AddNumberToObject(ts, "register_user_id", diag->register_user_id));
+        if (diag->register_user_name[0]) SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(ts, "register_user_name", diag->register_user_name));
+        SNAPSHOT_JSON_CHECK(cJSON_AddBoolToObject(ts, "identity_persistent", diag->identity_persistent));
+        SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(ts, "identity_pubkey_prefix", diag->identity_pubkey_prefix));
     }
-    cJSON_AddNumberToObject(ts, "peers_online", online);
-    cJSON_AddNumberToObject(ts, "peers_total",  total);
-    /* Auth-failure surface — same field the Tailscale tab reads; the
-     * Status page consumes it for the small TS badge in the AP card. */
-    if (ml) {
-        microlink_diag_t diag;
-        if (microlink_get_diag(ml, &diag) == ESP_OK) {
-            cJSON_AddNumberToObject(ts, "register_user_id", diag.register_user_id);
-            if (diag.register_user_name[0]) {
-                cJSON_AddStringToObject(ts, "register_user_name", diag.register_user_name);
-            }
-            cJSON_AddBoolToObject  (ts, "identity_persistent", diag.identity_persistent);
-            cJSON_AddStringToObject(ts, "identity_pubkey_prefix", diag.identity_pubkey_prefix);
-        }
-    }
-    cJSON_AddItemToObject(root, "tailscale", ts);
+
 
     /* Telemetry summary — full counters in /api/system. */
     telemetry_state_t tm = telemetry_get_state();
@@ -2735,64 +2739,48 @@ static esp_err_t tailscale_handler(httpd_req_t *req)
     }
     cJSON_AddItemToObject(root, "settings", settings);
 
-    /* Runtime state. tailscale_is_connected() refreshes tunnel_ip from
-     * microlink, so the SPA gets a live tunnel address on every fetch. */
-    bool ts_runtime_connected = tailscale_is_connected();
-    cJSON *runtime = cJSON_CreateObject();
-    cJSON_AddBoolToObject(runtime, "connected", ts_runtime_connected);
-    if (tailscale_tunnel_ip) {
+    /* Runtime: standalone copy, never a borrowed microlink pointer. */
+    tailscale_status_snapshot_t runtime_snapshot;
+    bool runtime_has_snapshot = tailscale_snapshot_status(&runtime_snapshot);
+    bool ts_runtime_connected = runtime_has_snapshot && runtime_snapshot.connected;
+    cJSON *runtime = cJSON_AddObjectToObject(root, "runtime");
+    SNAPSHOT_JSON_CHECK(runtime);
+    SNAPSHOT_JSON_CHECK(cJSON_AddBoolToObject(runtime, "connected", ts_runtime_connected));
+    if (runtime_has_snapshot && runtime_snapshot.vpn_ip) {
         char buf[16];
-        ip4_to_str(tailscale_tunnel_ip, buf, sizeof buf);
-        cJSON_AddStringToObject(runtime, "tunnel_ip", buf);
+        ip4_hbo_to_str(runtime_snapshot.vpn_ip, buf, sizeof buf);
+        SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(runtime, "tunnel_ip", buf));
     }
-    /* Last RegisterResponse User block — surfaces auth_key failures
-     * that Headscale wraps in a 200-OK (User.ID=0 + empty name → auth
-     * invalid or stale node-key). microlink_get_diag is the cheap path:
-     * it just copies cached fields, no extra round-trips. */
-    {
-        struct microlink_s *mlh = tailscale_get_microlink();
-        if (mlh) {
-            microlink_diag_t diag;
-            if (microlink_get_diag(mlh, &diag) == ESP_OK) {
-                cJSON_AddNumberToObject(runtime, "register_user_id",
-                                        diag.register_user_id);
-                if (diag.register_user_name[0]) {
-                    cJSON_AddStringToObject(runtime, "register_user_name",
-                                            diag.register_user_name);
-                }
-                cJSON_AddBoolToObject  (runtime, "identity_persistent",
-                                        diag.identity_persistent);
-                cJSON_AddStringToObject(runtime, "identity_pubkey_prefix",
-                                        diag.identity_pubkey_prefix);
-                /* DERP region diagnostics (ported from the old http_server UI,
-                 * 2026-05-28). derp_home_region = the region the ESP actually
-                 * connects to (netcheck may override the default); derp_rtts =
-                 * the per-region STUN latencies netcheck measured. Surfacing
-                 * these lets the operator SEE why a DERP home was chosen and
-                 * pick a better region. */
-                cJSON_AddNumberToObject(runtime, "derp_home_region",    diag.derp_home_region);
-                cJSON_AddNumberToObject(runtime, "derp_region_default", diag.derp_region_default);
-                /* Human-readable city for OUR active home region, so the
-                 * Status page can show "DERP: #4 Frankfurt" rather than a
-                 * bare number. NULL (region 0 / not in DERPMap yet) → omit. */
-                const char *_hrn = microlink_get_derp_region_name(mlh, diag.derp_home_region);
-                if (_hrn) cJSON_AddStringToObject(runtime, "derp_home_region_name", _hrn);
-                microlink_derp_rtt_t _rtts[32];   /* ML_MAX_DERP_REGIONS; the count passed below must not exceed this */
-                int _nr = microlink_get_derp_rtts(mlh, _rtts, 32);
-                cJSON *derp_rtts = cJSON_CreateArray();
-                for (int _i = 0; _i < _nr; _i++) {
-                    cJSON *e = cJSON_CreateObject();
-                    const char *nm = microlink_get_derp_region_name(mlh, _rtts[_i].region_id);
-                    cJSON_AddNumberToObject(e, "region_id", _rtts[_i].region_id);
-                    cJSON_AddStringToObject(e, "name", nm ? nm : "?");
-                    cJSON_AddNumberToObject(e, "rtt_ms", _rtts[_i].rtt_ms);
-                    cJSON_AddItemToArray(derp_rtts, e);
-                }
-                cJSON_AddItemToObject(runtime, "derp_rtts", derp_rtts);
-            }
+    if (runtime_has_snapshot) {
+        const microlink_diag_t *diag = &runtime_snapshot.diag;
+        SNAPSHOT_JSON_CHECK(cJSON_AddNumberToObject(runtime, "register_user_id", diag->register_user_id));
+        if (diag->register_user_name[0]) SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(runtime, "register_user_name", diag->register_user_name));
+        SNAPSHOT_JSON_CHECK(cJSON_AddBoolToObject(runtime, "identity_persistent", diag->identity_persistent));
+        SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(runtime, "identity_pubkey_prefix", diag->identity_pubkey_prefix));
+        SNAPSHOT_JSON_CHECK(cJSON_AddNumberToObject(runtime, "derp_home_region", diag->derp_home_region));
+        SNAPSHOT_JSON_CHECK(cJSON_AddNumberToObject(runtime, "derp_region_default", diag->derp_region_default));
+        char home_name[64];
+        if (tailscale_snapshot_region_name(runtime_snapshot.generation, diag->derp_home_region,
+                                           home_name, sizeof(home_name)))
+            SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(runtime, "derp_home_region_name", home_name));
+        microlink_derp_rtt_t rtts[32];
+        int nr = tailscale_snapshot_derp_rtts(runtime_snapshot.generation, rtts, 32);
+        cJSON *derp_rtts = cJSON_AddArrayToObject(runtime, "derp_rtts");
+        SNAPSHOT_JSON_CHECK(derp_rtts);
+        for (int i = 0; i < nr; i++) {
+            cJSON *e = snapshot_json_array_object(derp_rtts);
+            SNAPSHOT_JSON_CHECK(e);
+            char name[64];
+            bool known = tailscale_snapshot_region_name(runtime_snapshot.generation,
+                                                         rtts[i].region_id, name, sizeof(name));
+            SNAPSHOT_JSON_CHECK(cJSON_AddNumberToObject(e, "region_id", rtts[i].region_id));
+            SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(e, "name", known ? name : "?"));
+            SNAPSHOT_JSON_CHECK(cJSON_AddNumberToObject(e, "rtt_ms", rtts[i].rtt_ms));
+
         }
+
     }
-    cJSON_AddItemToObject(root, "runtime", runtime);
+
 
     /* MTU / MSS / PMTU manager — persisted fields (mode, fixed_mtu)
      * plus the live-derived effective values the AP-side netif hooks
@@ -2817,44 +2805,41 @@ static esp_err_t tailscale_handler(httpd_req_t *req)
      * DISCO hasn't run, so everyone briefly looks online + DERP. Mask
      * both fields to false until we're verifiably Connected — better a
      * grey dot for a few seconds than a misleading green one. */
-    cJSON *peers = cJSON_CreateArray();
-    struct microlink_s *ml = tailscale_get_microlink();
-    if (ml) {
-        int n = microlink_get_peer_count(ml);
-        for (int i = 0; i < n; i++) {
-            microlink_peer_info_t pi;
-            if (microlink_get_peer_info(ml, i, &pi) != ESP_OK) continue;
-            cJSON *p = cJSON_CreateObject();
-            cJSON_AddStringToObject(p, "hostname",     pi.hostname);
-            cJSON_AddBoolToObject  (p, "online",       ts_runtime_connected && pi.online);
-            cJSON_AddBoolToObject  (p, "direct_path",  ts_runtime_connected && pi.direct_path);
-            cJSON_AddBoolToObject  (p, "is_exit_node", pi.is_exit_node);
-            /* Peer's home DERP region — relevant when direct_path is false
-             * (the region this peer is relayed through). Surface the id +
-             * the human-readable city so the peers table can show
-             * "DERP · Frankfurt" instead of a bare "DERP". 0 = unknown. */
-            cJSON_AddNumberToObject(p, "derp_region", pi.derp_region);
-            if (pi.derp_region) {
-                const char *_prn = microlink_get_derp_region_name(ml, pi.derp_region);
-                if (_prn) cJSON_AddStringToObject(p, "derp_region_name", _prn);
-            }
-            /* microlink_peer_info_t.vpn_ip is host byte order. */
+    /* Peer snapshots are copies; generation check avoids mixing old/new instances. */
+    cJSON *peers = cJSON_AddArrayToObject(root, "peers");
+    SNAPSHOT_JSON_CHECK(peers);
+    if (runtime_has_snapshot) {
+        for (int i = 0; i < runtime_snapshot.peer_count; i++) {
+            tailscale_peer_snapshot_t snap;
+            if (!tailscale_snapshot_peer(runtime_snapshot.generation, i, &snap)) continue;
+            microlink_peer_info_t *pi = &snap.peer;
+            cJSON *p = snapshot_json_array_object(peers);
+            SNAPSHOT_JSON_CHECK(p);
+            SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(p, "hostname", pi->hostname));
+            SNAPSHOT_JSON_CHECK(cJSON_AddBoolToObject(p, "online", ts_runtime_connected && pi->online));
+            SNAPSHOT_JSON_CHECK(cJSON_AddBoolToObject(p, "direct_path", ts_runtime_connected && pi->direct_path));
+            SNAPSHOT_JSON_CHECK(cJSON_AddBoolToObject(p, "is_exit_node", pi->is_exit_node));
+            SNAPSHOT_JSON_CHECK(cJSON_AddNumberToObject(p, "derp_region", pi->derp_region));
+            if (pi->derp_region && snap.derp_region_name[0])
+                SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(p, "derp_region_name", snap.derp_region_name));
             char buf[16];
-            ip4_hbo_to_str(pi.vpn_ip, buf, sizeof buf);
-            cJSON_AddStringToObject(p, "vpn_ip", buf);
-            cJSON *routes = cJSON_CreateArray();
-            for (int r = 0; r < pi.subnet_route_count; r++) {
-                cJSON *rt = cJSON_CreateObject();
-                ip4_hbo_to_str(pi.subnet_routes[r].network, buf, sizeof buf);
-                cJSON_AddStringToObject(rt, "network",    buf);
-                cJSON_AddNumberToObject(rt, "prefix_len", pi.subnet_routes[r].prefix_len);
-                cJSON_AddItemToArray(routes, rt);
+            ip4_hbo_to_str(pi->vpn_ip, buf, sizeof buf);
+            SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(p, "vpn_ip", buf));
+            cJSON *routes = cJSON_AddArrayToObject(p, "subnet_routes");
+            SNAPSHOT_JSON_CHECK(routes);
+            for (int r = 0; r < pi->subnet_route_count && r < MICROLINK_MAX_PEER_ROUTES; r++) {
+                cJSON *rt = snapshot_json_array_object(routes);
+                SNAPSHOT_JSON_CHECK(rt);
+                ip4_hbo_to_str(pi->subnet_routes[r].network, buf, sizeof buf);
+                SNAPSHOT_JSON_CHECK(cJSON_AddStringToObject(rt, "network", buf));
+                SNAPSHOT_JSON_CHECK(cJSON_AddNumberToObject(rt, "prefix_len", pi->subnet_routes[r].prefix_len));
+
             }
-            cJSON_AddItemToObject(p, "subnet_routes", routes);
-            cJSON_AddItemToArray(peers, p);
+
+
         }
     }
-    cJSON_AddItemToObject(root, "peers", peers);
+
 
     /* Accepted-routes table (peer routes we've decided to honour). */
     cJSON *acc = cJSON_CreateArray();

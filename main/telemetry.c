@@ -38,6 +38,7 @@
 
 #include "nvs_params.h"
 #include "tailscale_config.h"
+#include "tailscale_snapshot.h"
 #include "microlink.h"                /* microlink_get_diag — reconnect-cause counters */
 #include "telemetry.h"
 
@@ -256,10 +257,7 @@ static esp_err_t do_send(const char *event_type)
      * combined connect-count overcounts as a health signal (ordinary
      * transport flaps are indistinguishable from watchdog saves). */
     microlink_diag_t mdiag = {0};
-    {
-        struct microlink_s *mlh = tailscale_get_microlink();
-        if (mlh) microlink_get_diag(mlh, &mdiag);
-    }
+    (void)tailscale_snapshot_diag(&mdiag);
 
     char body[768];
     int n;

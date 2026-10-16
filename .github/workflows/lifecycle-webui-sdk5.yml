@@ -1,0 +1,115 @@
+name: Experimental lifecycle Web UI SDK5 integration
+on:
+  push:
+    branches: [experiment/lifecycle-webui-sdk5-20261016]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  snapshots:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Host environment
+        run: |
+          gcc --version
+          clang --version
+          python3 --version
+          sudo apt-get update -qq
+          sudo apt-get install -y libcjson-dev
+          dpkg-query -W libasan8 libubsan1 libclang-rt-18-dev libcjson-dev || true
+      - name: Original archive generator tests
+        run: python3 tests/lifecycle_webui/pilot/tests/test_generator.py
+      - name: Original archive host tests on both compilers
+        if: matrix.cc == 'gcc'
+        run: sh tests/lifecycle_webui/pilot/tests/run.sh
+      - name: Integrated manager and Web UI tests
+        run: python3 tests/lifecycle_webui/run.py --cc ${{ matrix.cc }}
+      - name: Integrated ASan and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: python3 tests/lifecycle_webui/run.py --cc ${{ matrix.cc }} --sanitize
+  regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Existing 23 host suites
+        run: |
+          python -m pip install paramiko requests
+          python tools/run_host_tests.py
+          python tools/run_snmp_tests.py
+          python tools/test_routes_0130.py
+          python tools/test_exit_0131.py
+          python tools/test_upstream_0132.py
+          python tools/test_wifi_ps_0133.py
+          python tools/test_factory.py
+          node tests/host/test_ui.cjs
+          node tests/host/test_snmp_ui.cjs
+          python tools/test_integration.py
+          python tools/test_wg_diagnostics.py
+          python tools/test_wgopt1.py
+          python tools/test_wgopt2.py
+          python tools/test_wgopt4.py
+          python tools/test_wgopt5.py
+          python tools/test_wgopt6.py
+          python tools/test_wgopt9.py
+          python tools/test_wgopt10.py
+          python tools/test_wgopt12.py
+          python tools/test_wgopt13.py
+          python tools/test_snapshot_overlay.py
+          python tools/test_security_0135.py
+          python tools/test_ssh_host_keys.py
+  sdk5:
+    needs: [snapshots, regression]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install fixed PlatformIO core
+        run: python -m pip install platformio==6.2.0
+      - name: Clean SDK5 compile and link only
+        run: |
+          test ! -d .pio/build
+          git rev-parse HEAD
+          git submodule status
+          pio --version
+          pio run -e esp32-s3
+      - name: Verify SDK versions and image hashes
+        run: |
+          pio pkg list -e esp32-s3
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          home = Path(os.environ.get('PLATFORMIO_CORE_DIR', str(Path.home()/'.platformio')))
+          platform = json.loads((home/'platforms/espressif32/platform.json').read_text())
+          framework = home/'packages/framework-espidf'
+          version = (framework/'version.txt').read_text().strip()
+          print('VERIFIED platform',platform['version'],'ESP-IDF',version)
+          assert platform['version']=='6.13.0'
+          assert version=='5.5.3'
+          PY
+          sha256sum .pio/build/esp32-s3/firmware.bin .pio/build/esp32-s3/firmware.elf
+          git -C external/microlink diff --exit-code
+          git -C external/microlink diff --cached --exit-code

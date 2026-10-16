@@ -1,0 +1,13 @@
+{
+  "base": "af136603c3db472115fcf3ccd9c82eeef4b19d3c",
+  "upstream_microlink_pin": "eb63b97073e529d57bc9c1deaeea25ac304034e5",
+  "file_sha256": {
+    "README-RU.md": "11db014b421443b132fffc6c10fcc4818fac50abcd4b3336134e5d6c1acaa02b",
+    "apply_patch.py": "9967abe0998fb589858b331116d0a875c57bd86f91bf560f4fc0967fbd12a3f3",
+    "test-run.log": "281ef312eb9614368f02a4bf84162ad9c50b6a65bd7cdda34914b62ab9543f8a",
+    "tests/host_stubs.h": "813693b8facda5f78a09a084121422c391fb93a7e19b194fdd0d1e80121209a7",
+    "tests/run.sh": "ed4b585667eb94808b820c86b2c1a4933035e1afa6e99ed842c37d152abc603c",
+    "tests/test_generator.py": "34a1c9dba8b33302f7b7600dd3d02a4495307c83a050ea93d4cc1005b7d72fb5",
+    "tests/test_snapshot.c": "7e146665a4e2bf75920cd20853b35fec8de0083b97843b08c1fceccf3e4b4525"
+  }
+}

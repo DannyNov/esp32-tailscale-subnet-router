@@ -22,6 +22,7 @@
 #include "microlink.h"
 #include "sdlog.h"
 #include "tailscale_config.h"
+#include "tailscale_snapshot.h"
 #include "nvs_params.h"
 #include "esp_sntp.h"
 
@@ -90,8 +91,7 @@ static uint32_t s_life_generation = 0;
 static portMUX_TYPE      s_queue_lock = portMUX_INITIALIZER_UNLOCKED;
 static int               s_connect_queued = 0;
 
-/* Tolerate a NULL mutex (alloc failure at boot) so a heap-starved device
- * degrades to the old unserialized behaviour rather than deadlocking. */
+/* Connect fails closed if the boot-time mutex allocation failed. */
 static inline void life_lock(void)
 {
     if (s_life_mux) xSemaphoreTake(s_life_mux, portMAX_DELAY);
@@ -135,7 +135,7 @@ void tailscale_init(void)
     if (s_life_mux == NULL) {
         s_life_mux = xSemaphoreCreateMutex();
         if (s_life_mux == NULL) {
-            ESP_LOGE(TAG, "lifecycle mutex alloc failed - connect/disconnect unserialized");
+            ESP_LOGE(TAG, "lifecycle mutex alloc failed - connect disabled");
         }
     }
     if (nvs_param_get_int("ts_enabled", &v) == ESP_OK) {
@@ -190,6 +190,108 @@ void tailscale_init(void)
 struct microlink_s *tailscale_get_microlink(void)
 {
     return s_microlink;
+}
+
+/* Lifetime-safe read adapter: s_life_mux serializes all manager-owned
+ * instance replacements. Never retain ml after releasing the mutex. This
+ * does not synchronize simultaneous writes by INTERNAL microlink tasks. */
+static bool snapshot_try_lock(void)
+{
+    return s_life_mux && xSemaphoreTake(s_life_mux, 0) == pdTRUE;
+}
+
+bool tailscale_snapshot_status(tailscale_status_snapshot_t *out)
+{
+    if (!out) return false;
+    memset(out, 0, sizeof(*out));
+    if (!snapshot_try_lock()) return false;
+    microlink_t *ml = s_microlink;
+    bool ok = false;
+    if (ml && microlink_get_diag(ml, &out->diag) == ESP_OK) {
+        out->generation = s_life_generation;
+        out->connected = microlink_is_connected(ml);
+        out->vpn_ip = microlink_get_vpn_ip(ml);
+        int n = microlink_get_peer_count(ml);
+        if (n < 0) n = 0;
+        if (n > 64) n = 64;  /* config max_peers <= 64 */
+        out->peer_count = n;
+        if (out->connected) {
+            for (int i = 0; i < n; i++) {
+                microlink_peer_info_t info = {0};
+                if (microlink_get_peer_info(ml, i, &info) == ESP_OK && info.online)
+                    out->peers_online++;
+            }
+        }
+        ok = true;
+    }
+    xSemaphoreGive(s_life_mux);
+    if (!ok) memset(out, 0, sizeof(*out));
+    return ok;
+}
+
+bool tailscale_snapshot_diag(microlink_diag_t *out)
+{
+    if (!out) return false;
+    memset(out, 0, sizeof(*out));
+    /* A standalone diag avoids a full peer traversal for telemetry. */
+    if (!snapshot_try_lock()) return false;
+    bool ok = s_microlink && microlink_get_diag(s_microlink, out) == ESP_OK;
+    xSemaphoreGive(s_life_mux);
+    if (!ok) memset(out, 0, sizeof(*out));
+    return ok;
+}
+
+bool tailscale_snapshot_peer(uint32_t generation, int index, tailscale_peer_snapshot_t *out)
+{
+    if (!out) return false;
+    memset(out, 0, sizeof(*out));
+    if (!snapshot_try_lock()) return false;
+    bool ok = false;
+    microlink_t *ml = s_microlink;
+    if (ml && generation == s_life_generation && index >= 0 && index < 64 &&
+        microlink_get_peer_info(ml, index, &out->peer) == ESP_OK) {
+        out->peer.hostname[sizeof(out->peer.hostname) - 1] = '\0';
+        if (out->peer.derp_region) {
+            const char *name = microlink_get_derp_region_name(ml, out->peer.derp_region);
+            if (name) snprintf(out->derp_region_name, sizeof(out->derp_region_name), "%s", name);
+        }
+        ok = true;
+    }
+    xSemaphoreGive(s_life_mux);
+    if (!ok) memset(out, 0, sizeof(*out));
+    return ok;
+}
+
+int tailscale_snapshot_derp_rtts(uint32_t generation, microlink_derp_rtt_t *out, int capacity)
+{
+    if (!out || capacity <= 0 || capacity > TAILSCALE_SNAPSHOT_MAX_DERP_RTTS) return 0;
+    memset(out, 0, (size_t)capacity * sizeof(*out));
+    if (!snapshot_try_lock()) return 0;
+    int count = (s_microlink && generation == s_life_generation)
+        ? microlink_get_derp_rtts(s_microlink, out, capacity) : 0;
+    xSemaphoreGive(s_life_mux);
+    if (count <= 0 || count > capacity) {
+        memset(out, 0, (size_t)capacity * sizeof(*out));
+        return 0;
+    }
+    return count;
+}
+
+bool tailscale_snapshot_region_name(uint32_t generation, uint16_t region, char *out, size_t capacity)
+{
+    if (!out || capacity == 0) return false;
+    out[0] = '\0';
+    if (!snapshot_try_lock()) return false;
+    bool ok = false;
+    if (s_microlink && generation == s_life_generation) {
+        const char *name = microlink_get_derp_region_name(s_microlink, region);
+        if (name) {
+            snprintf(out, capacity, "%s", name);
+            ok = true;
+        }
+    }
+    xSemaphoreGive(s_life_mux);
+    return ok;
 }
 
 void tailscale_set_subnet(uint32_t ip, uint32_t mask)
@@ -339,6 +441,7 @@ const char *tailscale_advertise_routes_effective(void)
 
 static esp_err_t tailscale_connect_locked(void)
 {
+    if (!s_life_mux) return ESP_ERR_INVALID_STATE;
     /* A generation, rather than an address, detects allocator reuse after
      * reconnect. Readers hold the lifecycle mutex when inspecting it. */
     ++s_life_generation;
