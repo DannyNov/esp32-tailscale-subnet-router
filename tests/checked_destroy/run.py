@@ -39,7 +39,8 @@ def main():
     failed = function(connect, '    if (err != ESP_OK) {')
     manager_bodies = ('static int manager_prior(void) {\n'+prior+'\nreturn ESP_OK;\n}\n'
         'static int manager_start_failed(int err) {\n'+failed+'\nreturn ESP_OK;\n}\n'
-        + function(manager, 'void tailscale_disconnect('))
+        + function(manager, 'void tailscale_disconnect(')+'\n'
+        + function(manager, 'bool tailscale_is_connected('))
     fixture = (Path(__file__).parent/'fixture.c').read_text()
     source = out/'lifecycle.c'
     source.write_text(fixture.replace('/* GENERATED */', bodies+'\n'+tasks)

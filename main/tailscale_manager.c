@@ -554,8 +554,14 @@ void tailscale_disconnect(void)
 
 bool tailscale_is_connected(void)
 {
-    tailscale_status_snapshot_t status;
-    return tailscale_snapshot_status(&status) && status.connected;
+    if (!tailscale_lifecycle_try_acquire()) return false;
+    bool connected = s_microlink && microlink_is_connected(s_microlink);
+    if (connected) {
+        uint32_t host_ip = microlink_get_vpn_ip(s_microlink);
+        if (host_ip) tailscale_tunnel_ip = htonl(host_ip);
+    }
+    tailscale_lifecycle_release();
+    return connected;
 }
 
 void tailscale_connect_task(void *pvParameters)

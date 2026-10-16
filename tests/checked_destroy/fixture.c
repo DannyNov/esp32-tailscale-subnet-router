@@ -92,6 +92,14 @@ static int held, detached;
 static void life_lock(void) { assert(!held); held=1; }
 static void life_unlock(void) { assert(held); held=0; }
 static void sdlog_set_microlink(void *ml) { assert(!ml); detached++; }
+static bool tailscale_lifecycle_try_acquire(void) {
+    if(held) return false;
+    held=1; return true;
+}
+static void tailscale_lifecycle_release(void) { life_unlock(); }
+static bool microlink_is_connected(microlink_t *ml) { return ml->state==1; }
+static uint32_t microlink_get_vpn_ip(microlink_t *ml) { (void)ml; return 42; }
+#define htonl(x) ((uint32_t)(x)<<24)
 /* MANAGER */
 static microlink_t *instance(void) {
     microlink_t *ml=calloc(1,sizeof(*ml)); assert(ml);
@@ -148,6 +156,9 @@ int main(void) {
     ml_task_exiting(s_microlink);
     assert(manager_start_failed(ESP_FAIL)==ESP_FAIL && !s_microlink && freed==1);
     s_microlink=instance();
+    s_microlink->state=1;
+    assert(tailscale_is_connected() && tailscale_tunnel_ip==htonl(42) && !held);
+    held=1; assert(!tailscale_is_connected()); held=0;
     assert(manager_prior()==ESP_OK && !s_microlink && freed==1);
     assert(detached>=6);
     return 0;
