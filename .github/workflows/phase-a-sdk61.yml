@@ -1,7 +1,7 @@
-name: EXPERIMENTAL Phase A diagnostics - no deployment
+name: EXPERIMENTAL IDF61 crypto compatibility - no deployment
 on:
   push:
-    branches: [experiment/idf61-phase-a-ci-20261016]
+    branches: [experiment/idf61-crypto-compat-20261016]
   workflow_dispatch:
 permissions:
   contents: read

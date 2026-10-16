@@ -32,6 +32,8 @@ for mac in [bytes(6), bytes.fromhex('020000000001'), bytes.fromhex('ffffffffffff
     ident += hashlib.sha256(b'esp32-tailscale-v1'+ident.encode()).digest()[:1].hex()
     vectors.append('{{%s},%s},' % (','.join(str(b) for b in mac),json.dumps(ident)))
 vectors.append('};')
+vectors.append('static const char empty_password_fixture[] = '+json.dumps(
+    bytes(range(16)).hex()+':'+hashlib.sha256(bytes(range(16))).hexdigest())+';')
 (out/'crypto_vectors.h').write_text('\n'.join(vectors)+'\n')
 sources = []
 for folder in ['core','drivers/builtin/src','platform','dispatch','extras','utilities']:

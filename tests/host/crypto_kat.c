@@ -122,6 +122,10 @@ int main(void)
     assert(!verify_web_password(password_vectors[0].text));
     int before=writes; assert(set_web_password_hashed("replacement") == ESP_FAIL);
     assert(writes == before);
+    char bad_id[19]; assert(!telemetry_hash_from_mac(telemetry_vectors[0].mac,bad_id));
+    for(int j=0;j<19;j++) assert(bad_id[j] == 0);
+    reset_faults(); fail_at=1;
+    assert(!verify_web_password(password_vectors[0].text) && calls == 1);
     reset_faults();
     for(int i=0;i<97;i++) {
         if(i == 32) continue;
@@ -144,6 +148,11 @@ int main(void)
     }
     reset_faults(); assert(!verify_web_password(NULL));
     assert(set_web_password_hashed(NULL) == ESP_ERR_INVALID_ARG);
+    strcpy(persisted,empty_password_fixture);
+    assert(verify_web_password("")); /* Preserve old verify semantics for such fixtures. */
+    strcpy(persisted,password_vectors[0].fixture);
+    for(char *p=persisted;*p;p++) if(*p>='a' && *p<='f') *p-=32;
+    assert(verify_web_password(password_vectors[0].text));
     assert(set_web_password_hashed("") == ESP_OK && persisted[0] == 0);
     assert(!is_web_password_set() && !verify_web_password(""));
     assert(opens == closes);
