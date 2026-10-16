@@ -1,0 +1,33 @@
+name: Linux lifecycle diagnostic baseline
+on:
+  push:
+    branches: [experiment/microlink-lifecycle-linux-ci-20261016]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Confirm environment
+        run: |
+          uname -a
+          command -v gcc clang python3
+          gcc --version
+          clang --version
+          python3 --version
+          git rev-parse HEAD
+          git submodule status
+      - name: Compile link execute smoke and baseline
+        run: python3 tests/lifecycle_ci/run.py --cc ${{ matrix.cc }}
+      - name: ASan and UBSan
+        run: python3 tests/lifecycle_ci/run.py --cc ${{ matrix.cc }} --sanitize
