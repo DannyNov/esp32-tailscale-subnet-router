@@ -38,15 +38,17 @@ for name in ('ml_coord.c', 'ml_netcheck.c'):
     assert (src / 'src' / name).read_bytes() == (ROOT / 'external/microlink/components/microlink/src' / name).read_bytes()
 # wgopt7 adds only queue geometry reporting in generated microlink.c.
 # Strip the two exact probes, then require byte-for-byte upstream identity.
-generated_init = (src / 'src/microlink.c').read_text()
+generated_init = (src / 'src/microlink.c').read_text(encoding='utf-8')
 assert generated_init.startswith('#include "wg_diag.h"\n')
 generated_init = generated_init.removeprefix('#include "wg_diag.h"\n')
 probe = '    wg_diag_queue_config(ML_WG_RX_QUEUE_DEPTH, sizeof(ml_rx_packet_t));\n'
 assert generated_init.count(probe) == 1
 generated_init = generated_init.replace(probe, '')
-# Exact reviewed checked-destroy overlay output; no other C changes allowed.
+# Exact reviewed checked-destroy overlay output as UTF-8 with universal newlines.
+# Do not hash a locale-dependent Windows cp1251 decoding of the same bytes.
+# No other C changes are allowed.
 import hashlib
-assert hashlib.sha256(generated_init.encode()).hexdigest() == 'd75ec504105dae45c5971dfd8fb0ede4b91683f42852868f73e548616b513428'
+assert hashlib.sha256(generated_init.encode('utf-8')).hexdigest() == '6e191802cc92773623624cee576183472e8a4fd1f93ee9286db1a96bfdc241aa'
 assert 'body_len < 512 ? 512 : body_len' in coord
 assert 'GOAWAY' in coord and 'RST_STREAM' in coord and 'END_STREAM' in coord
 assert 'wireguard_expire_keys(peer)' in wif
