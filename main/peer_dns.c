@@ -34,6 +34,7 @@
 #include "lwip/sockets.h"
 #include "microlink.h"
 #include "tailscale_config.h"
+#include "tailscale_snapshot.h"
 
 #define PEER_DNS_MAX_MESSAGE       4096U
 #define PEER_DNS_MAX_B64           (((PEER_DNS_MAX_MESSAGE + 2U) / 3U) * 4U)
@@ -204,8 +205,10 @@ static bool resolver_is_local(uint32_t resolver_nbo)
         }
     }
 
-    microlink_t *ml = tailscale_get_microlink();
-    return ml && microlink_get_vpn_ip(ml) == ntohl(resolver_nbo);
+    tailscale_status_snapshot_t status;
+    /* Contention must reject the resolver rather than bypass loop checks. */
+    if (!tailscale_snapshot_status(&status)) return true;
+    return status.vpn_ip == ntohl(resolver_nbo);
 }
 
 static bool resolver_is_usable(uint32_t resolver_nbo)

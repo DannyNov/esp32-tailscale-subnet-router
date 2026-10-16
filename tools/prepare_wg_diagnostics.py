@@ -22,6 +22,7 @@ from wgopt7_overlay import apply as apply_wgopt7
 from wgopt9_overlay import apply as apply_wgopt9
 from wgopt12_overlay import apply as apply_wgopt12
 from wgopt13_overlay import apply as apply_wgopt13
+from checked_destroy_overlay import apply as apply_checked_destroy
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = 'eb63b97073e529d57bc9c1deaeea25ac304034e5'
@@ -174,6 +175,7 @@ def prepare(out):
     apply_wgopt9(component)
     apply_wgopt12(component)
     apply_wgopt13(component)
+    apply_checked_destroy(component)
     if len(sites) > 64:
         raise RuntimeError('Allocation site table exceeded')
     (out / 'allocation-sites.json').write_text(json.dumps(sites, indent=2) + '\n')

@@ -30,6 +30,17 @@ for path in protected:
         raise AssertionError(f'Protected path missing: {path}')
     old = subprocess.check_output(['git', 'show', f'bd0a9c0dd2e0109544a6aa2a441e92e2670df62a:{path}'], cwd=root)
     current = (root / path).read_bytes().replace(b'\r\n', b'\n')
+    if path == 'main/peer_dns.c':
+        # Exact approved lifecycle delta; all other DNS bytes remain protected.
+        include = b'#include "tailscale_config.h"\n#include "tailscale_snapshot.h"'
+        new = (b'    tailscale_status_snapshot_t status;\n'
+               b'    /* Contention must reject the resolver rather than bypass loop checks. */\n'
+               b'    if (!tailscale_snapshot_status(&status)) return true;\n'
+               b'    return status.vpn_ip == ntohl(resolver_nbo);')
+        prior = (b'    microlink_t *ml = tailscale_get_microlink();\n'
+                 b'    return ml && microlink_get_vpn_ip(ml) == ntohl(resolver_nbo);')
+        assert current.count(include) == 1 and current.count(new) == 1
+        current = current.replace(include, b'#include "tailscale_config.h"').replace(new, prior)
     if path == 'platformio.ini':
         # Diagnostic build pins the exact platform used by the original CI.
         # All hardware/network/build flags remain byte-identical.

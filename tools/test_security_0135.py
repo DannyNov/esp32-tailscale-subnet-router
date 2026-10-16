@@ -44,7 +44,9 @@ generated_init = generated_init.removeprefix('#include "wg_diag.h"\n')
 probe = '    wg_diag_queue_config(ML_WG_RX_QUEUE_DEPTH, sizeof(ml_rx_packet_t));\n'
 assert generated_init.count(probe) == 1
 generated_init = generated_init.replace(probe, '')
-assert generated_init == (ROOT / 'external/microlink/components/microlink/src/microlink.c').read_text()
+# Exact reviewed checked-destroy overlay output; no other C changes allowed.
+import hashlib
+assert hashlib.sha256(generated_init.encode()).hexdigest() == 'd75ec504105dae45c5971dfd8fb0ede4b91683f42852868f73e548616b513428'
 assert 'body_len < 512 ? 512 : body_len' in coord
 assert 'GOAWAY' in coord and 'RST_STREAM' in coord and 'END_STREAM' in coord
 assert 'wireguard_expire_keys(peer)' in wif

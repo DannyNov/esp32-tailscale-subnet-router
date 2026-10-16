@@ -456,16 +456,14 @@ static esp_err_t tailscale_connect_locked(void)
 
     if (s_microlink) {
         ESP_LOGW(TAG, "Already initialized; tearing down prior instance first");
-        /* Stop the SD recorder from sampling this instance before we free it:
-         * its writer task calls microlink_get_* accessors on the handle, and
-         * between destroy() and the sdlog_set_microlink() further down it
-         * would read freed memory. Clear the handle first to close that
-         * teardown window (paired with microlink_stop's socket unblocking,
-         * the fix for the 2026-05-26 ml_derp_tx teardown crash). */
-        sdlog_set_microlink(NULL);
-        microlink_stop(s_microlink);
-        microlink_destroy(s_microlink);
-        s_microlink = NULL;
+        sdlog_set_microlink(NULL); /* waits for every SD reader */
+        tailscale_connected = false;
+        tailscale_tunnel_ip = 0;
+        esp_err_t destroyed = microlink_destroy_checked(&s_microlink);
+        if (destroyed != ESP_OK) {
+            ESP_LOGE(TAG, "Prior instance retained: %s", esp_err_to_name(destroyed));
+            return destroyed;
+        }
     }
 
     microlink_config_t cfg = {
@@ -508,8 +506,11 @@ static esp_err_t tailscale_connect_locked(void)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "microlink_start failed: %s", esp_err_to_name(err));
         sdlog_set_microlink(NULL);   /* handle was set above; unset before free */
-        microlink_destroy(s_microlink);
-        s_microlink = NULL;
+        esp_err_t destroyed = microlink_destroy_checked(&s_microlink);
+        if (destroyed != ESP_OK) {
+            ESP_LOGE(TAG, "Partial start retained: %s", esp_err_to_name(destroyed));
+            return destroyed;
+        }
         return err;
     }
 
@@ -540,9 +541,12 @@ void tailscale_disconnect(void)
     tailscale_tunnel_ip = 0;
     if (s_microlink) {
         sdlog_set_microlink(NULL);   /* detach recorder before freeing the instance */
-        microlink_stop(s_microlink);
-        microlink_destroy(s_microlink);
-        s_microlink = NULL;
+        esp_err_t destroyed = microlink_destroy_checked(&s_microlink);
+        if (destroyed != ESP_OK) {
+            ESP_LOGE(TAG, "Stop incomplete, owner retained: %s", esp_err_to_name(destroyed));
+            life_unlock();
+            return;
+        }
     }
     life_unlock();
     ESP_LOGI(TAG, "Tailscale stopped");
@@ -550,17 +554,8 @@ void tailscale_disconnect(void)
 
 bool tailscale_is_connected(void)
 {
-    if (!s_microlink) return false;
-    bool connected = microlink_is_connected(s_microlink);
-    if (connected) {
-        /* microlink_get_vpn_ip returns host byte order; cache as network byte order
-         * to match the existing VPN tunnel-IP convention used by netif hooks. */
-        uint32_t host_ip = microlink_get_vpn_ip(s_microlink);
-        if (host_ip) {
-            tailscale_tunnel_ip = htonl(host_ip);
-        }
-    }
-    return connected;
+    tailscale_status_snapshot_t status;
+    return tailscale_snapshot_status(&status) && status.connected;
 }
 
 void tailscale_connect_task(void *pvParameters)

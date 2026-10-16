@@ -39,6 +39,7 @@
 #include "lwip_route_hook.h"
 #include "microlink.h"
 #include "tailscale_config.h"
+#include "tailscale_snapshot.h"
 #include "ping/ping_sock.h"
 
 static const char *TAG = "exit_route";
@@ -771,12 +772,14 @@ void route_explain(uint32_t src_hbo, uint32_t dst_hbo,
                 uint32_t nw = tailscale_accepted_routes[i].network;
                 /* Resolve the advertising peer's hostname. */
                 char peer_host[40] = "unknown peer";
-                microlink_t *ml = tailscale_get_microlink();
-                if (ml) {
-                    int pn = microlink_get_peer_count(ml);
+                tailscale_status_snapshot_t status;
+                bool have_status = tailscale_snapshot_status(&status);
+                if (have_status) {
+                    int pn = status.peer_count;
                     for (int p = 0; p < pn; p++) {
-                        microlink_peer_info_t pi;
-                        if (microlink_get_peer_info(ml, p, &pi) != ESP_OK) continue;
+                        tailscale_peer_snapshot_t peer;
+                        if (!tailscale_snapshot_peer(status.generation, p, &peer)) continue;
+                        microlink_peer_info_t pi = peer.peer;
                         for (int r = 0; r < pi.subnet_route_count; r++) {
                             if (pi.subnet_routes[r].network == nw &&
                                 pi.subnet_routes[r].prefix_len == plen) {
@@ -851,12 +854,14 @@ void route_explain(uint32_t src_hbo, uint32_t dst_hbo,
                 if (wg && netif_is_up(wg)) {
                     /* Look up the exit-node peer's hostname. */
                     char en_host[40] = "exit-node peer";
-                    microlink_t *ml = tailscale_get_microlink();
-                    if (ml) {
-                        int pn = microlink_get_peer_count(ml);
+                    tailscale_status_snapshot_t status;
+                    bool have_status = tailscale_snapshot_status(&status);
+                    if (have_status) {
+                        int pn = status.peer_count;
                         for (int p = 0; p < pn; p++) {
-                            microlink_peer_info_t pi;
-                            if (microlink_get_peer_info(ml, p, &pi) != ESP_OK) continue;
+                            tailscale_peer_snapshot_t peer;
+                            if (!tailscale_snapshot_peer(status.generation, p, &peer)) continue;
+                            microlink_peer_info_t pi = peer.peer;
                             if (pi.vpn_ip == tailscale_exit_node_ip) {
                                 short_peer_name(pi.hostname, en_host, sizeof(en_host));
                                 break;
@@ -894,12 +899,14 @@ void route_explain(uint32_t src_hbo, uint32_t dst_hbo,
             netif_default == find_wg_netif()) {
             /* Look up the exit-node peer's hostname. */
             char en_host[40] = "exit-node peer";
-            microlink_t *ml = tailscale_get_microlink();
-            if (ml) {
-                int pn = microlink_get_peer_count(ml);
+            tailscale_status_snapshot_t status;
+            bool have_status = tailscale_snapshot_status(&status);
+            if (have_status) {
+                int pn = status.peer_count;
                 for (int p = 0; p < pn; p++) {
-                    microlink_peer_info_t pi;
-                    if (microlink_get_peer_info(ml, p, &pi) != ESP_OK) continue;
+                    tailscale_peer_snapshot_t peer;
+                    if (!tailscale_snapshot_peer(status.generation, p, &peer)) continue;
+                    microlink_peer_info_t pi = peer.peer;
                     if (pi.vpn_ip == tailscale_exit_node_ip) {
                         short_peer_name(pi.hostname, en_host, sizeof(en_host));
                         break;
