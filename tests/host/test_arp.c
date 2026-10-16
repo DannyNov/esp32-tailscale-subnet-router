@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #define LWIP_IPV4 1
 #define LWIP_ARP 1
 #define ETHARP_SUPPORT_STATIC_ENTRIES 1
@@ -18,8 +19,10 @@ struct netif { int id; };
 struct eth_addr { uint8_t addr[6]; };
 static struct { int state; struct netif *netif; ip4_addr_t ipaddr; } arp_table[ARP_TABLE_SIZE];
 static struct netif *last_netif;
-static err_t etharp_update_arp_entry(struct netif *n,const ip4_addr_t *a,const struct eth_addr *mac,int flags) {
-    (void)a;(void)mac;assert(flags==(ETHARP_FLAG_TRY_HARD|ETHARP_FLAG_STATIC_ENTRY));last_netif=n;return ERR_OK;
+static struct eth_addr last_mac;
+static err_t etharp_update_arp_entry(struct netif *n,const ip4_addr_t *a,struct eth_addr *mac,int flags) {
+    (void)a;last_mac=*mac;mac->addr[0]^=0xff;
+    assert(flags==(ETHARP_FLAG_TRY_HARD|ETHARP_FLAG_STATIC_ENTRY));last_netif=n;return ERR_OK;
 }
 #define ip4_addr_eq(a,b) ((a)->addr==(b)->addr)
 static void etharp_free_entry(int i) { arp_table[i].state=0; }
@@ -27,6 +30,7 @@ static void etharp_free_entry(int i) { arp_table[i].state=0; }
 int main(void) {
     struct netif ap={1},sta={2};ip4_addr_t ip={4};struct eth_addr mac={{2,0,0,0,0,1}};
     assert(tsr_etharp_add_static_entry(&ap,&ip,&mac)==ERR_OK);assert(last_netif==&ap);
+    assert(mac.addr[0]==2 && !memcmp(&mac,&last_mac,sizeof(mac)));
     assert(tsr_etharp_add_static_entry(NULL,&ip,&mac)==ERR_ARG);
     arp_table[0].state=arp_table[1].state=ETHARP_STATE_STATIC;
     arp_table[0].netif=&sta;arp_table[1].netif=&ap;arp_table[0].ipaddr=arp_table[1].ipaddr=ip;

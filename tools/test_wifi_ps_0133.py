@@ -36,5 +36,15 @@ for path in protected:
         assert current.count(b'platform = espressif32@7.1.3') == 1
         current = current.replace(b'platform = espressif32@7.1.3',
                                   b'platform = espressif32@^6.4.0')
+    if path == 'components/dhcpserver/etharp_netif.inc':
+        # Exact, separately tested SDK6 const-boundary adaptation. Preserve
+        # byte equality for the complete file after reversing only this delta.
+        original = b'    return etharp_update_arp_entry(netif, ip, mac, ETHARP_FLAG_TRY_HARD | ETHARP_FLAG_STATIC_ENTRY);'
+        adapted = (b'    /* IDF6 lwIP takes a mutable pointer and copies the address synchronously.\n'
+                   b"     * Keep our caller's const contract without casting away const. */\n"
+                   b'    struct eth_addr address = *mac;\n'
+                   b'    return etharp_update_arp_entry(netif, ip, &address, ETHARP_FLAG_TRY_HARD | ETHARP_FLAG_STATIC_ENTRY);')
+        assert current.count(adapted) == 1
+        current = current.replace(adapted, original)
     assert current == old.replace(b'\r\n', b'\n'), path
 print('PASS: PS boot/API/UI source contracts and unchanged protected production files; runtime pending hardware')
