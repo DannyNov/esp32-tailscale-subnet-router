@@ -19,6 +19,7 @@ with (out/'crypto-kat.log').open('wb') as log:
     kat=subprocess.run([sys.executable,'tools/test_crypto_compat.py','--sdk',str(sdk)],cwd=root,stdout=log,stderr=subprocess.STDOUT)
 if kat.returncode == 0:
     legacy_storage=root/'build/legacy-packages'
+    legacy_storage.mkdir(parents=True,exist_ok=True)
     with (out/'legacy-package-install.log').open('wb') as log:
         legacy_install=subprocess.run([sys.executable,'-m','platformio','pkg','install','--global','--storage-dir',str(legacy_storage),'--tool','platformio/framework-espidf@3.50503.0'],cwd=root,stdout=log,stderr=subprocess.STDOUT)
     if legacy_install.returncode:
