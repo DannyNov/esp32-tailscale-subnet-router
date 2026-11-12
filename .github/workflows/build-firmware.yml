@@ -70,6 +70,7 @@ jobs:
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 30
           name: esp32-s3-0.1.31-tuya
           path: artifacts/
           if-no-files-found: error
