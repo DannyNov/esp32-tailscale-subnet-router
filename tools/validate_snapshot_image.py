@@ -1,15 +1,15 @@
 """Fail closed; only publish an application candidate after successful build."""
 from pathlib import Path
-import hashlib, json, struct
+import hashlib, json, struct, os
 HERE = Path(__file__).resolve().parents[1]
-image=HERE/'.pio/build/esp32-s3/firmware.bin'
+image=Path(os.environ.get('PLATFORMIO_BUILD_DIR', str(HERE/'.pio/build')))/'esp32-s3/firmware.bin'
 data=image.read_bytes()
 assert 0 < len(data) <= 1966080, 'OTA partition exceeded'
 assert data[0]==0xe9, 'Not an ESP application image'
 assert data[3] >> 4 == 2, 'Image flash size must be 4 MiB'
-assert b'0.1.35-tuya-wgopt13\0' in data, 'Wrong candidate version'
+assert b'0.1.39-tuya-office-wgopt13\0' in data, 'Wrong candidate version'
 assert struct.unpack_from('<I',data,32)[0] == 0xabcd5432, 'Missing application descriptor'
-assert data[48:80].split(b'\0')[0] == b'0.1.35-tuya-wgopt13', 'Descriptor version mismatch'
+assert data[48:80].split(b'\0')[0] == b'0.1.39-tuya-office-wgopt13', 'Descriptor version mismatch'
 assert int.from_bytes(data[12:14],'little')==9, 'Not ESP32-S3'
 cursor=24; checksum=0xef
 for _ in range(data[1]):
@@ -33,12 +33,12 @@ config=(HERE/'sdkconfig.esp32-s3').read_text()
 for flag in ['CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y','CONFIG_SPIRAM=y','CONFIG_SPIRAM_MODE_OCT=y','CONFIG_SPIRAM_XIP_FROM_PSRAM=y']:
     assert flag in config, flag
 assert 'CONFIG_ML_ZERO_COPY_WG=y' not in config
-out=HERE/'artifacts'; out.mkdir(exist_ok=True)
-target=out/'firmware-0.1.35-tuya-wgopt13-esp32-s3-ota.bin'
+out=Path(os.environ.get('OFFICE_ARTIFACT_DIR',str(HERE/'artifacts'))); out.mkdir(exist_ok=True)
+target=out/'firmware-0.1.39-tuya-office-wgopt13-esp32-s3-ota.bin'
 target.write_bytes(data)
 result={'file':target.name,'bytes':len(data),'partition_bytes':1966080,
         'headroom':1966080-len(data),'sha256':hashlib.sha256(data).hexdigest(),
         'image_checksum_valid':True,'appended_sha256_valid':True,'chip':'ESP32-S3',
-        'version':'0.1.35-tuya-wgopt13','flashed':False}
+        'version':'0.1.39-tuya-office-wgopt13','flashed':False}
 (out/'image.json').write_text(json.dumps(result,indent=2))
 print(json.dumps(result))

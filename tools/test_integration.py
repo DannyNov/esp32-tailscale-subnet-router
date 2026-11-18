@@ -11,7 +11,7 @@ assert main.index('    netif_hooks_init();') < main.index('    snmp_agent_init()
 capacity = int(re.search(r'conf.max_uri_handlers\s*=\s*(\d+)', web)[1])
 registered = re.findall(r'reg_uri\(server, &(\w+)\);', web)
 assert capacity == 72
-assert len(registered) == len(set(registered)) == 60
+assert len(registered) == len(set(registered)) == 61
 assert capacity > len(registered)
 assert {'uri_dhcp_remembered', 'uri_favicon'} <= set(registered)
 assert 'httpd_register_uri_handler(server,' not in web
@@ -53,5 +53,5 @@ assert association.index('mac_deny_is_blocked(event->mac)') < association.index(
 remembered = web.split('static esp_err_t dhcp_remembered_handler(', 1)[1].split('static const httpd_uri_t uri_dhcp_remembered', 1)[0]
 assert 'cJSON_AddNumberToObject(entry, "last_seen", (double)r->last_seen);' in remembered
 assert 'dhcp_last_seen_activity(' not in remembered
-assert 'set(PROJECT_VER "0.1.35-tuya-wgopt13")' in (root / 'CMakeLists.txt').read_text()
+assert 'set(PROJECT_VER "0.1.39-tuya-office-wgopt13")' in (root / 'CMakeLists.txt').read_text()
 print('PASS: real association wiring, deny filtering, read-only remembered API with Unix seconds, candidate version')

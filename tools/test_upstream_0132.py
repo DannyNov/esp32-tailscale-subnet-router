@@ -5,7 +5,7 @@ import re
 
 root = Path(__file__).resolve().parents[1]
 ml = root / 'external/microlink'
-assert subprocess.check_output(['git', '-C', str(ml), 'rev-parse', 'HEAD'], text=True).strip() == 'eb63b97073e529d57bc9c1deaeea25ac304034e5'
+assert subprocess.check_output(['git', '-C', str(ml), 'rev-parse', 'HEAD'], text=True).strip() == '6f92800ba25d653fef14a745674a11b9955ac7d1'
 src = ml / 'components/microlink/src'
 wg = (src / 'ml_wg_mgr.c').read_text()
 for line in ['WG UDP TX:', 'WG RX:']:

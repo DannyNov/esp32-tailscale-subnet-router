@@ -56,9 +56,8 @@ def apply(component):
     for p in success_patterns:
         s = once(s, 'ESP_LOGW(TAG, "' + p, 'ESP_LOGD(TAG, "' + p)
 
-    s = exact_sub(s,
-        r"(?m)^(\s*)pbuf = D_ALLOC\((\d+), (pbuf_alloc\(PBUF_TRANSPORT, header_len \+ padded_len \+ WIREGUARD_AUTHTAG_LEN, PBUF_RAM\))\);$",
-        r"\1int64_t d_tx_pbuf_us = esp_timer_get_time();\n\1pbuf = D_ALLOC(\2, \3);\n\1wg_diag_time(D_TX_PBUF, (uint32_t)(esp_timer_get_time() - d_tx_pbuf_us));")
+    s = once(s, '\t\t\tu16_t out_len =', '\t\t\tint64_t d_tx_pbuf_us = esp_timer_get_time();\n\t\t\tu16_t out_len =')
+    s = once(s, '\t\t\tif (pbuf) {\n\t\t\t\t// Note: allocating pbuf from RAM above guarantees', '\t\t\twg_diag_time(D_TX_PBUF, (uint32_t)(esp_timer_get_time() - d_tx_pbuf_us));\n\t\t\tif (pbuf) {\n\t\t\t\t// Note: allocating pbuf from RAM above guarantees')
     s = once(s, '\t\t\t\t\tpbuf_copy_partial(q, dst, unpadded_len, 0);',
             "\t\t\t\t\tint64_t d_tx_copy_us = esp_timer_get_time();\n\t\t\t\t\tpbuf_copy_partial(q, dst, unpadded_len, 0);\n\t\t\t\t\twg_diag_time(D_TX_COPY, (uint32_t)(esp_timer_get_time() - d_tx_copy_us));")
     s = exact_sub(s,

@@ -10,16 +10,16 @@ with TemporaryDirectory(prefix="wgopt9-") as td:
     out = Path(td)
     prepare(out)
     mgr = (out / "microlink/src/ml_wg_mgr.c").read_text()
-    begin = mgr.index("static err_t wgopt1_udp_pbuf_output_cb(")
+    begin = mgr.index("static err_t wg_udp_pbuf_output_cb(uint32_t dest_ip, uint16_t dest_port, struct pbuf *p, void *ctx) {")
     end = mgr.index("static err_t wg_udp_output_cb(", begin)
     borrowed = mgr[begin:end]
     assert borrowed.count("wg9_direct_udp_begin();") == 1
     assert borrowed.count("wg9_direct_udp_end(err);") == 1
     assert borrowed.index("wg9_direct_udp_begin();") < borrowed.index(
-        "udp_sendto(s_wg_output_pcb, p, &dst, dest_port)") < borrowed.index(
+        "wg_udp_sendto_tcpip(p, &dst, dest_port)") < borrowed.index(
         "wg9_direct_udp_end(err);")
     assert borrowed.count("wg_diag_tx(3, err);") == 1
-    assert "wgopt1_send_both(ml, dest_ip, packet_data, packet_len);" in borrowed
+    assert "wg_send_both_relay(ml, dest_ip, data, len);" in borrowed
     assert "return err;" in borrowed
     assert '#define ML_WG_RX_QUEUE_DEPTH    128' in (out / "microlink/include/microlink_internal.h").read_text()
     diag = (out / "microlink/components/wireguard_lwip/src/wg_diag.c").read_text()

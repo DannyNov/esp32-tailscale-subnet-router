@@ -13,7 +13,7 @@ with TemporaryDirectory(prefix="wgopt10-") as tmp:
     assert '#define ML_WG_RX_QUEUE_DEPTH    128' in h
     mgr = (out / 'microlink/src/ml_wg_mgr.c').read_text()
     assert 'wg9_direct_udp_begin();' in mgr and 'wg9_direct_udp_end(err);' in mgr
-    assert mgr.count('err_t err = udp_sendto(s_wg_output_pcb, p, &dst, dest_port);') >= 1
+    assert mgr.count('err_t err = wg_udp_sendto_tcpip(p, &dst, dest_port);') >= 1
     code = (ROOT / 'main/wg10_wifi_tx.c').read_text()
     for name,mode in (('esp_wifi_internal_tx_by_ref','1'),('esp_wifi_internal_tx','0')):
         assert '__real_' + name in code

@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='diag-test-') as tem
     else:
         raise AssertionError('Anchor drift did not abort')
     sites = json.loads((out / 'allocation-sites.json').read_text())
-    assert len(sites) == 25 and len({s['site'] for s in sites}) == 25
+    assert len(sites) == 26 and len({s['site'] for s in sites}) == 26
     assert any(s['expression'].startswith('WG_OUT_ALLOC(') for s in sites)
     assert any(s['expression'].startswith('mem_malloc(') for s in sites)
     assert sum('pbuf_alloc(' in s['expression'] for s in sites) == 7
@@ -37,7 +37,8 @@ with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='diag-test-') as tem
                'components/wireguard_lwip/CMakeLists.txt',
                'components/wireguard_lwip/src/wireguard.c',
                'components/wireguard_lwip/src/wireguard.h',
-               'components/wireguard_lwip/src/wireguardif.h', 'include/microlink_internal.h'}
+               'components/wireguard_lwip/src/wireguardif.h',
+               'include/microlink_internal.h'}
     changed = set()
     for f in upstream.rglob('*'):
         if f.is_file():

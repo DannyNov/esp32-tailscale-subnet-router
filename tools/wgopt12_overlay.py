@@ -192,12 +192,12 @@ def apply(component):
     s = once(s, '    /* Shutdown WireGuard interface. ml->wg_netif goes NULL first',
              '    wg12_stop();\n    /* Shutdown WireGuard interface. ml->wg_netif goes NULL first')
 
-    begin = s.index('static err_t wgopt1_udp_pbuf_output_cb(')
+    begin = s.index('static err_t wg_udp_pbuf_output_cb(uint32_t dest_ip, uint16_t dest_port, struct pbuf *p, void *ctx) {')
     end = s.index('static err_t wg_udp_output_cb(', begin)
     body = s[begin:end]
-    anchor = '    err_t err = udp_sendto(s_wg_output_pcb, p, &dst, dest_port);'
-    pre = """    const bool data_packet = packet_len >= 4 && packet_data[0] == 4 &&
-        packet_data[1] == 0 && packet_data[2] == 0 && packet_data[3] == 0;
+    anchor = '    err_t err = wg_udp_sendto_tcpip(p, &dst, dest_port);'
+    pre = """    const bool data_packet = len >= 4 && data[0] == 4 &&
+        data[1] == 0 && data[2] == 0 && data[3] == 0;
     if (data_packet && wg12_backlogged())
         return wg12_enqueue(p, dest_ip, dest_port, true) ? ERR_OK : ERR_MEM;
 """

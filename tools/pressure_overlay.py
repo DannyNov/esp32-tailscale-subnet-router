@@ -15,10 +15,11 @@ def apply(component):
         f.write_text(s)
     f = component / 'src/ml_wg_mgr.c'
     s = f.read_text()
-    s = once(s, '    if (!wrap) return ERR_MEM;', '    if (!wrap) { wg_diag_tx(0, ERR_MEM); return ERR_MEM; }')
+    s = once(s, '    if (!wrap) return NULL;', '    if (!wrap) { wg_diag_tx(0, ERR_MEM); return NULL; }')
     s = once(s, '    if (!wrap->data_spiram) {', '    if (!wrap->data_spiram) {\n        wg_diag_tx(1, ERR_MEM);')
-    s = once(s, '    if (!p) {\n        heap_caps_free(wrap->data_spiram);', '    if (!p) {\n        wg_diag_tx(2, ERR_MEM);\n        heap_caps_free(wrap->data_spiram);')
-    s = once(s, '    wg_diag_add(D_DIRECT, D_TX, 1);', '    wg_diag_tx(3, err);\n    wg_diag_add(D_DIRECT, D_TX, 1);')
+    s = once(s, '    if (!p) { heap_caps_free(wrap->data_spiram); heap_caps_free(wrap); return NULL; }', '    if (!p) { wg_diag_tx(2, ERR_MEM); heap_caps_free(wrap->data_spiram); heap_caps_free(wrap); return NULL; }')
+    assert s.count('    wg_diag_add(D_DIRECT, D_TX, 1);') == 2
+    s = s.replace('    wg_diag_add(D_DIRECT, D_TX, 1);', '    wg_diag_tx(3, err);\n    wg_diag_add(D_DIRECT, D_TX, 1);')
     anchor = '            int64_t d_start = esp_timer_get_time();'
     assert s.count(anchor) == 2
     s = s.replace(anchor, anchor + '\n            wg_diag_time(D_WAIT, (uint32_t)(d_start - wg_pkt.diag_enqueued_us));\n            wg_diag_drain(d_start);')

@@ -82,12 +82,14 @@ static int sample_rssi=-49, sample_ps=1;
 static const char *nms[]={"IDLE0","IDLE1","wifi","tiT","ml_wg_mgr","ml_net_io"};
 static const uint32_t delta[]={200,700,100,50,400,50};
 void test_log(const char *tag, const char *fmt, ...) {
+    (void)tag;
     assert(strcmp(tag,"WG5_SYS")==0);
     va_list ap;va_start(ap,fmt);
     vsnprintf(lastlog,sizeof(lastlog),fmt,ap);
     va_end(ap);
 }
 void *heap_caps_malloc(size_t n, unsigned caps) {
+    (void)caps;
     assert(caps==3);allocations++;return malloc(n);
 }
 int esp_wifi_sta_get_ap_info(wifi_ap_record_t *ap) {
@@ -97,6 +99,7 @@ int esp_wifi_get_ps(wifi_ps_type_t *ps) {*ps=sample_ps;return ESP_OK;}
 int64_t esp_timer_get_time(void) { return 10000000LL + (int64_t)samples * 10000000LL; }
 UBaseType_t uxTaskGetNumberOfTasks(void) { return number_tasks; }
 UBaseType_t uxTaskGetSystemState(TaskStatus_t *arr,UBaseType_t limit,uint32_t *total) {
+    (void)limit;
     assert(limit>=6);*total=100000+samples*1000;
     for(unsigned i=0;i<6;i++) {
         arr[i].pcTaskName=nms[i];

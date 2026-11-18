@@ -120,9 +120,12 @@ recv = '''#include <assert.h>
 #define vTaskDelay(x) ((void)(x))
 typedef int microlink_t;
 static int mode,calls;
+#define ML_COORD_PARTIAL_READ_MS 5000
+static int64_t fake_time;
+static int64_t esp_timer_get_time(void) { fake_time += 1000000; return fake_time; }
 static int ml_conn_read(microlink_t *ml,uint8_t *b,size_t n) { (void)ml;(void)b;(void)n; calls++; if(mode==0)return 0;if(mode==1){errno=EAGAIN;return -1;}if(mode==2&&calls==1)return 1;if(mode==2){errno=EAGAIN;return -1;}return (int)n; }
 ''' + function(coord, 'coord_recv') + '''
-int main(void) { microlink_t ml=0;uint8_t b[3];errno=EAGAIN;assert(coord_recv(&ml,b,3)==-1);assert(errno==ENOTCONN && calls==1);mode=1;calls=0;assert(coord_recv(&ml,b,3)==-1 && calls==1);mode=2;calls=0;assert(coord_recv(&ml,b,3)==-1 && calls==302);mode=3;assert(coord_recv(&ml,b,3)==0);return 0; }
+int main(void) { microlink_t ml=0;uint8_t b[3];errno=EAGAIN;assert(coord_recv(&ml,b,3)==-1);assert(errno==ENOTCONN && calls==1);mode=1;calls=0;assert(coord_recv(&ml,b,3)==-1 && calls==1);mode=2;calls=0;assert(coord_recv(&ml,b,3)==-1 && calls==7 && errno==ETIMEDOUT);mode=3;assert(coord_recv(&ml,b,3)==0);return 0; }
 '''
 # Execute the exact send-counter/encryption critical section. Linux CI also
 # runs two concurrent senders with pthread mutex mocks; local Windows checks

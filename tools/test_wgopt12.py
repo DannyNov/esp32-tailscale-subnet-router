@@ -1,7 +1,7 @@
 """wgopt12: generated-overlay and executable reference-ownership regression."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import subprocess
+import subprocess, os, shlex
 from prepare_wg_diagnostics import ROOT, prepare
 from wgopt12_overlay import RETRY_IMPL
 
@@ -9,20 +9,20 @@ with TemporaryDirectory(prefix="wgopt12-") as tmp:
     output = Path(tmp)
     prepare(output)
     mgr = (output / "microlink/src/ml_wg_mgr.c").read_text()
-    src = mgr.split("static err_t wgopt1_udp_pbuf_output_cb(", 1)[1].split(
+    src = mgr.split("static err_t wg_udp_pbuf_output_cb(uint32_t dest_ip, uint16_t dest_port, struct pbuf *p, void *ctx) {", 1)[1].split(
         "static err_t wg_udp_output_cb(", 1)[0]
     diag = (output / "microlink/components/wireguard_lwip/src/wg_diag.c").read_text()
     hdr = (output / "microlink/components/wireguard_lwip/src/wg_diag.h").read_text()
     # Scope remains balanced even when backlog redirects before udp_sendto.
     assert src.index("wg12_backlogged()") < src.index("wg9_direct_udp_begin()")
-    assert src.index("wg9_direct_udp_begin()") < src.index("udp_sendto(")
-    assert src.index("udp_sendto(") < src.index("wg10_wifi_nomem_in_scope()")
+    assert src.index("wg9_direct_udp_begin()") < src.index("wg_udp_sendto_tcpip(")
+    assert src.index("wg_udp_sendto_tcpip(") < src.index("wg10_wifi_nomem_in_scope()")
     assert src.index("wg10_wifi_nomem_in_scope()") < src.index("wg9_direct_udp_end(err)")
     assert src.count("wg9_direct_udp_end(err)") == 1
-    assert "packet_data[0] == 4" in src and "driver_nomem && data_packet" in src
-    assert "wgopt1_send_both(ml, dest_ip, packet_data, packet_len);" in src
-    assert "wireguardif_set_udp_pbuf_output(netif, wgopt1_udp_pbuf_output_cb, ml);" in mgr
-    assert mgr.index("wg12_stop();") < mgr.index("wireguardif_shutdown(netif)")
+    assert "data[0] == 4" in src and "driver_nomem && data_packet" in src
+    assert "wg_send_both_relay(ml, dest_ip, data, len);" in src
+    assert "wireguardif_set_tx_pbuf_output(" in mgr
+    assert mgr.index("wg12_stop();") < mgr.index("wg_netif_take_down_cb, netif")
     assert "wg12_start();" in mgr
     assert "int wg10_wifi_nomem_in_scope(void)" in diag
     assert "wg12_report();" in diag and "WG12_TX" in diag
@@ -227,7 +227,7 @@ int main(void) {
     f = output / "wgopt12_mock.c"
     exe = output / "wgopt12_mock"
     f.write_text(prefix + RETRY_IMPL + suffix)
-    subprocess.run(["gcc", "-std=c11", "-Wall", "-Wextra", "-o", str(exe), str(f)],
+    subprocess.run(shlex.split(os.environ.get("CC", "cc")) + ["-std=c11", "-Wall", "-Wextra", "-o", str(exe), str(f)],
                    check=True)
     subprocess.run([str(exe)], check=True)
 print("PASS: wgopt12 generated source contracts and deterministic host C replay")

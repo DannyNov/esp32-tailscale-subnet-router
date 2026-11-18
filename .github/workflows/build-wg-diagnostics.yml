@@ -1,7 +1,9 @@
-name: Build wgopt13 passive loop diagnostics (no deployment)
+name: Build OFFICE v0.1.39 (no deployment)
 on:
   push:
-    branches: [diagnostic/wgopt13-loop-latency-v0135]
+    branches:
+      - integration/office-v0.1.39-20261118
+      - diagnostic/wgopt13-loop-latency-v0135
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,32 +18,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Host regression tests
+      - name: Offline regression suites
         run: |
-          python tools/run_host_tests.py
-          python tools/run_snmp_tests.py
-          python tools/test_routes_0130.py
-          python tools/test_exit_0131.py
-          python tools/test_upstream_0132.py
-          python tools/test_wifi_ps_0133.py
-          python tools/test_factory.py
-          node tests/host/test_ui.cjs
-          node tests/host/test_snmp_ui.cjs
-          python tools/test_integration.py
-          python tools/test_wg_diagnostics.py
-          python tools/test_wgopt1.py
-          python tools/test_wgopt2.py
-          python tools/test_wgopt4.py
-          python tools/test_wgopt5.py
-          python tools/test_wgopt6.py
-          python tools/test_wgopt9.py
-          python tools/test_wgopt10.py
-          python tools/test_wgopt12.py
-          python tools/test_wgopt13.py
-          python tools/test_snapshot_overlay.py
-          python tools/test_security_0135.py
           python -m pip install paramiko requests
-          python tools/test_ssh_host_keys.py
+          python tools/run_office_regressions.py
       - name: Build OTA application only
         run: |
           python -m pip install platformio
@@ -49,17 +29,23 @@ jobs:
       - name: Validate image and collect provenance
         run: |
           mkdir -p artifacts
-          cp .pio/build/esp32-s3/firmware.bin artifacts/firmware-0.1.35-tuya-wgopt13-esp32-s3-ota.bin
+          python tools/validate_snapshot_image.py
           cp .pio/build/esp32-s3/diagnostic-components/*.json artifacts/
           cp sdkconfig.esp32-s3 artifacts/sdkconfig-built.txt
-          cp docs/WGOPT13-DIAGNOSTICS-RU.md artifacts/README.md
-          python tools/validate_snapshot_image.py
+          cp docs/OFFICE-UPSTREAM-0139.md artifacts/README.md
           python tools/diagnostic_provenance.py
           pio pkg list -e esp32-s3 > artifacts/build-dependencies.txt
           cd artifacts
           sha256sum *.bin > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: esp32-s3-0.1.35-tuya-wgopt13
+          name: office-0.1.39-tuya-wgopt13
           path: artifacts/
+          retention-days: 14
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: office-offline-regression-logs
+          path: build/office-tests/
+          retention-days: 14

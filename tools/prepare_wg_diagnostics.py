@@ -24,7 +24,7 @@ from wgopt12_overlay import apply as apply_wgopt12
 from wgopt13_overlay import apply as apply_wgopt13
 
 ROOT = Path(__file__).resolve().parents[1]
-PIN = 'eb63b97073e529d57bc9c1deaeea25ac304034e5'
+PIN = '6f92800ba25d653fef14a745674a11b9955ac7d1'
 
 def replace(text, old, new, count=1):
     actual = text.count(old)
@@ -112,9 +112,9 @@ def prepare(out):
             text = replace(text, '            int ret = poll_derp_read(ml);', '''            int ret = poll_derp_read(ml);
             if (ret < 0) wg_diag_add(D_DERP, D_READ_ERROR, 1);''')
         elif rel == 'src/ml_wg_mgr.c':
-            text = replace(text, '    err_t err = udp_sendto(s_wg_output_pcb, p, &dst, dest_port);', '''    err_t err = udp_sendto(s_wg_output_pcb, p, &dst, dest_port);
+            text = replace(text, '    err_t err = wg_udp_sendto_tcpip(p, &dst, dest_port);', '''    err_t err = wg_udp_sendto_tcpip(p, &dst, dest_port);
     wg_diag_add(D_DIRECT, D_TX, 1);
-    if (err != ERR_OK) wg_diag_add(D_DIRECT, D_TX_ERROR, 1);''')
+    if (err != ERR_OK) wg_diag_add(D_DIRECT, D_TX_ERROR, 1);''', 2)
             text = replace(text, '            process_wg_packet(ml, &wg_pkt);', '''            int64_t d_start = esp_timer_get_time();
             wg_diag_add(wg_pkt.via_derp ? D_DERP : D_DIRECT, D_DEQUEUE, 1);
             process_wg_packet(ml, &wg_pkt);
