@@ -1,0 +1,33 @@
+name: SPARE diagnostic host lab
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: spare-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  host:
+    if: github.repository == 'DannyNov/esp32-tailscale-subnet-router' && github.ref == 'refs/heads/diagnostic/spare-ci-20261119'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Compile and test host fixtures
+        run: python3 tests/spare_ci/run.py --cc clang --sanitize "$RUNNER_TEMP/spare-result"
+      - name: Add job summary
+        if: always()
+        run: |
+          report="$RUNNER_TEMP/spare-result/result.md"
+          if test -f "$report"; then cat "$report" >> "$GITHUB_STEP_SUMMARY"; fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: spare-host-result
+          path: |
+            ${{ runner.temp }}/spare-result/result.json
+            ${{ runner.temp }}/spare-result/result.md
+          retention-days: 7
+          if-no-files-found: error

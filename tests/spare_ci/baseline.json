@@ -1,0 +1,53 @@
+{
+  "version": "0.1.40-tlsca1",
+  "build": "V26.1117.1536",
+  "idf": "6.1.0",
+  "target": "esp32s3",
+  "freertos_in_iram": "n",
+  "lwip_iram_optimization": "n",
+  "lwip_check_thread_safety": "n",
+  "elf_sha256": "b068d07975e175aad3ba57d2229cffed36cb1d8d5ff7a71ea3a60dd704b4ae11",
+  "app_sha256": "2ac14e2a66a805db7ebffca303ca18fba309e4e1329f2a821f4c472f1f0fd434",
+  "config_sha256": "45d1eefe8d2d4c0686f578e7409121e17e0da412683271c2f21fcfd818be518c",
+  "microlink_net_io_sha256": "96ad3274bfa1183388b96256dba955cafaef97ae37216cd26de1f9595d93f2ed",
+  "web_ui_sha256": "65a3e8bc64485d36a3f98e66a58dab730895cbde5a9f8fd97f8a0261e8223fdf",
+  "ip4_source_sha256": "72e0d201e2ab2bf18f48a50d5bbccc19a79137488514b1ec7b3c467e6d96d677",
+  "kit_sha256": "7e334435c6cff93f65a870c9290508c6164fc0f9c857bf60bc1bf77b709a4e67",
+  "fixtures_sha256": {
+    "queue.c": "594a6b661697a4320c66bd479d3ae1a30ce5410842a6d7a7653adf11c5f18149",
+    "queue-main.inc": "44f1efc4bfd6c5c6f0dbf03f16ad847794ac52b21bcfa8d4896557c3e9c32145",
+    "https-before.c": "2e59474224cb30e7617d64b10482e5d349ae7bf16fd3f4b5a7880ef75bcdd43b",
+    "https-after.c": "5d11231f4d8390991992bc9d6238785a8f1bb8c6faf9afcdc9bacfc9f0b8ac9b",
+    "win-shim/pthread.h": "b419fc50d78b08c9ae9fdc462cdff80f434e45018c4c6d6ec99bdf1d26aacb34"
+  },
+  "microlink_wg_mgr_sha256": "686e44d1f0f305de8250563aa2ef5630144f4b714b1191d1a7736d7d3fc46ba8",
+  "archive_build_matrix": [
+    {
+      "sdk": "5.5.3",
+      "freertos_in_iram": "y",
+      "config_file": "sdkconfig.h",
+      "config_sha256": "5c09d15e36e44be11c71203c3618f48c547c59bbcdd51a3adafd0b69cef2caa8",
+      "app_sha256": "d1a1ce26df71438500d86196fcd9b0503074d5727aa90c5ff6d38fdef40ee226",
+      "elf_sha256": "dc47c1a696ceeb21b8ef2ae2c559cb13342e991d5bbb9018abb9df779f47efaa",
+      "archived_manifest_sha256": "c3186a43cb1a8eb672a864e76fe0c7b1c876a5313f1093beaac7648df852cd0a"
+    },
+    {
+      "sdk": "6.1",
+      "freertos_in_iram": "y",
+      "config_file": "sdkconfig.h",
+      "config_sha256": "53984543003fcc21571be8efaab11410e6def030b84a6e3cc724aa828d3dc605",
+      "app_sha256": "c1614e3b33b67d8d91527ecfbcef160cb34e5b92e198ad683abf8fe2f6099c21",
+      "elf_sha256": "7e13c6338a48258ff069ef417f167dd3ef8b9b6ec6b6fe03253341cded60352c",
+      "archived_manifest_sha256": "50ba4257bdcd7eeb57e923f1643a6eb8a5264aa0b646b8ec742eb8a9b215ce83"
+    },
+    {
+      "sdk": "6.1",
+      "freertos_in_iram": "n",
+      "config_file": "sdkconfig",
+      "config_sha256": "45d1eefe8d2d4c0686f578e7409121e17e0da412683271c2f21fcfd818be518c",
+      "app_sha256": "2aeaac65e25a3d55148854970e355af05c9f9351fc510b6085994aa198b1e21b",
+      "elf_sha256": "a6a6132acb65685a17b24099f68dd431889bbfc1b235cf70f21aa0fe611ed722",
+      "archived_manifest_sha256": "cc10d6ab3f5efecde4f552d0349369bf2765cbcf98d6a3e4794b5a28c9e5fc9c"
+    }
+  ]
+}
