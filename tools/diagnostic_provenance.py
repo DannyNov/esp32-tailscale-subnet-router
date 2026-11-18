@@ -29,6 +29,9 @@ data = {'version': '0.1.39-tuya-office-wgopt13', 'source_commit': git('rev-parse
         'ota_bytes': size, 'partition_bytes': 1966080, 'headroom_bytes': 1966080 - size,
         'sha256': hashlib.sha256(image.read_bytes()).hexdigest(),
         'workflow_url': ('https://github.com/' + os.environ['GITHUB_REPOSITORY'] + '/actions/runs/' + os.environ['GITHUB_RUN_ID']) if 'GITHUB_RUN_ID' in os.environ else None,
+        'factory_file': 'factory-full.bin',
+        'factory_bytes': (artifacts/'factory-full.bin').stat().st_size,
+        'factory_sha256': hashlib.sha256((artifacts/'factory-full.bin').read_bytes()).hexdigest(),
         'hardware_acceptance': 'pending', 'flashed': False}
 (artifacts/'provenance.json').write_text(json.dumps(data, indent=2) + '\n')
 print(json.dumps(data, indent=2))

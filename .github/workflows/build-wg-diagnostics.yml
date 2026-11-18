@@ -22,14 +22,18 @@ jobs:
         run: |
           python -m pip install paramiko requests
           python tools/run_office_regressions.py
-      - name: Build OTA application only
+      - name: Build OTA application and factory image
         run: |
           python -m pip install platformio
           pio run -e esp32-s3
+          pio run -e esp32-s3 -t factory
       - name: Validate image and collect provenance
         run: |
           mkdir -p artifacts
           python tools/validate_snapshot_image.py
+          cp .pio/build/esp32-s3/firmware-factory.bin artifacts/factory-full.bin
+          cp .pio/build/esp32-s3/factory-manifest.json artifacts/
+          python tools/verify_office_factory.py
           cp .pio/build/esp32-s3/diagnostic-components/*.json artifacts/
           cp sdkconfig.esp32-s3 artifacts/sdkconfig-built.txt
           cp docs/OFFICE-UPSTREAM-0139.md artifacts/README.md

@@ -41,7 +41,7 @@ No SPARE experimental SDK6.1, flash16 layout, board identity restrictions or exp
 
 The new dispatch test compiles the exact generated helper and executes direct TCPIP send, private async copy, caller releasing/modifying its original buffer, allocation/post failures and detached-PCB cleanup. Source guards cover the 30-second direct-only timer, 5-second control timeout, blocking netif lifecycle and error state after stop timeout. Storage/configuration input files are compared byte-for-byte against the office baseline. These are bounded mocks and source checks, not proof of all concurrent runtime behavior.
 
-The workflow `Build OFFICE v0.1.39 (no deployment)` builds only the application, checks ESP32-S3/image descriptor/version, all segment checksums and appended SHA256, physical flash bounds, generated OTA slots and retained config, and emits commit/source hashes and provenance. It contains no flash, upload, reboot, OTA, deployment, release publication or credential-bearing device requests.
+The workflow `Build OFFICE v0.1.39 (no deployment)` builds the application and `factory-full.bin`, checks ESP32-S3/image descriptor/version, all segment checksums and appended SHA256, physical flash bounds, generated OTA slots and retained config, and emits commit/source hashes and provenance. The factory target merges the exact generated upload blocks, verifies offsets and blank NVS, and checks that its embedded application is byte-identical to the OTA file. Both images, their hashes and factory manifest are packaged together. The workflow contains no device flash, device upload, reboot, OTA, deployment or credential-bearing device requests.
 
 Hardware runtime, WiFi reconnect/roam, direct/DERP tunnel soak, throughput and persistence across installation remain untested for this candidate. No speed increase or complete production-readiness claim is made. No firmware was installed on OFFICE or SPARE. OTA requires separate authorization; do not install an upstream release binary over this fork merely because the UI offers it.
 
@@ -52,3 +52,7 @@ Hardware runtime, WiFi reconnect/roam, direct/DERP tunnel soak, throughput and p
 - [Build and test runs](https://github.com/DannyNov/esp32-tailscale-subnet-router/actions/workflows/build-wg-diagnostics.yml).
 
 Only a passing, verified integration head is promoted to the office source branch. The old branch name remains for continuity; firmware reports the new version. Main, SPARE source snapshots, stable releases and existing device configuration are not changed by this integration.
+
+## Distributed images
+
+Each fork version includes its own OTA application and `factory-full.bin`, built from the same commit. The full image is for a fresh board / separately authorized recovery at offset 0x0 and contains blank NVS, not the existing OFFICE identity. It must not be used as the Web UI OTA upload. Existing installations retain identity and settings through the application OTA path only. Creating these files does not authorize installing either one.
