@@ -1487,6 +1487,7 @@ static void nettest_task(void *arg)
 
     uint32_t total = 0;
     bool opened = false;
+    bool response_ok = true;
     if (up) {
         memset(buf, 'x', NETTEST_CHUNK);
         if (esp_http_client_open(cl, NETTEST_BYTES) == ESP_OK) {
@@ -1505,9 +1506,11 @@ static void nettest_task(void *arg)
     } else {
         if (esp_http_client_open(cl, 0) == ESP_OK) {
             opened = true;
-            (void)esp_http_client_fetch_headers(cl);   /* TLS + headers BEFORE timing */
+            int64_t headers = esp_http_client_fetch_headers(cl);
+            int status = esp_http_client_get_status_code(cl);
+            response_ok = headers >= 0 && status >= 200 && status < 300;
             int64_t t0 = esp_timer_get_time();
-            for (;;) {
+            for (; response_ok;) {
                 if (s_nt_cancel) break;
                 int r = esp_http_client_read(cl, buf, NETTEST_CHUNK);
                 if (r <= 0) break;
@@ -1523,6 +1526,9 @@ static void nettest_task(void *arg)
         s_nt_state = NT_ERROR;
     } else if (s_nt_cancel) {
         s_nt_state = NT_CANCELLED;
+    } else if (!response_ok) {
+        strlcpy(s_nt_err, "HTTP response failed", sizeof s_nt_err);
+        s_nt_state = NT_ERROR;
     } else if (total >= NETTEST_BYTES) {
         s_nt_state = NT_DONE;
     } else {
