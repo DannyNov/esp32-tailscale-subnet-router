@@ -24,14 +24,18 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+          submodules: true
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Compile and test host fixtures
         run: python3 tests/spare_ci/run.py --cc clang --sanitize "$RUNNER_TEMP/spare-result"
+      - name: Audit pinned MicroLink source (not deployed SPARE)
+        run: python3 tests/spare_ci/source_audit.py "$RUNNER_TEMP/spare-result/source-audit.json"
       - name: Add job summary
         if: always()
         run: |
           report="$RUNNER_TEMP/spare-result/result.md"
           if test -f "$report"; then cat "$report" >> "$GITHUB_STEP_SUMMARY"; fi
+          echo 'Source provenance: fork-pinned MicroLink only; installed SPARE remains NOT PROVEN.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -39,5 +43,6 @@ jobs:
           path: |
             ${{ runner.temp }}/spare-result/result.json
             ${{ runner.temp }}/spare-result/result.md
+            ${{ runner.temp }}/spare-result/source-audit.json
           retention-days: 7
           if-no-files-found: error
