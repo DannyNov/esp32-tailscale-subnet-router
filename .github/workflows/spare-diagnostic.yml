@@ -35,7 +35,20 @@ jobs:
         run: |
           report="$RUNNER_TEMP/spare-result/result.md"
           if test -f "$report"; then cat "$report" >> "$GITHUB_STEP_SUMMARY"; fi
-          echo 'Source provenance: fork-pinned MicroLink only; installed SPARE remains NOT PROVEN.' >> "$GITHUB_STEP_SUMMARY"
+          python3 - "$RUNNER_TEMP/spare-result/source-audit.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          from pathlib import Path
+          p=Path(sys.argv[1])
+          if not p.exists():
+              print("Provenance audit: **NOT AVAILABLE**")
+          else:
+              obj=json.loads(p.read_text(encoding="utf-8"))
+              deployed=obj.get("deployed_spare",{})
+              print("### SPARE source provenance")
+              print(f"- Archived SPARE: \`{deployed.get('firmware','unknown')}\`, build \`{deployed.get('build','unknown')}\`")
+              print(f"- Public MicroLink vs deployed SPARE SHA256: **{deployed.get('source_match','NOT PROVEN')}**")
+              print("- Source-check PASS does not establish deployed-SPARE behavior or root cause of PANIC.")
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
