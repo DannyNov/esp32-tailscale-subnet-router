@@ -103,3 +103,43 @@ This is an illustrative synthetic model, NOT an applied firmware patch.
 It deliberately reports no improvement in hardware throughput or proof
 of panic elimination. Further testing with exact lwIP/Wi-Fi interfaces
 and error-contract evidence is needed before production modification.
+
+## 2026-11-19: exact-source lwIP TX ownership assessment
+
+Only the exact **uploaded** SPARE manager source (SHA256
+`686e44d1f0f305de8250563aa2ef5630144f4b714b1191d1a7736d7d3fc46ba8`)
+has been source-attested; it is **not** committed here.
+Its WG12 queue has capacity 8, 3000 us timer period, 50000 us TTL,
+and 2 maximum attempts. `wg12_enqueue` calls `pbuf_ref`;
+`wg12_flush_cb` sends the same pointer through a blocking TCPIP
+rendezvous, and frees its queue reference afterward.
+`wgopt1_udp_pbuf_output_cb` can enqueue on backlog or after
+`ERR_MEM` and the original WireGuard caller retains its original
+reference until it finishes the callback. The observed
+`ip4_output_if_opt_src` assert is consistent with a flush before
+the caller drops the original reference, but that ordering has
+**not** been observed in device telemetry.
+
+Design decision for future controlled test only: do NOT copy every
+WireGuard packet. Evaluate queue-only byte ownership and independent
+per-attempt transmission buffers. At a working assumption of 1312 bytes
+payload and queue depth 8, queue-owned byte storage adds
+8*1312 = 10496 bytes (10.25 KiB), before allocation metadata,
+alignment and protocol headroom. A +28-byte UDP/IPv4 header allowance
+would yield 10720 bytes (~10.47 KiB); actual pbuf/heap overhead,
+fragmentation, cap and internal-versus-SPIRAM placement remain
+**NOT PROVEN**. If all 140 packets/s were copied this would add
+183680 bytes/s of payload copying, but queue-only traffic is unknown.
+Do not interpret these estimates as RAM measurements, performance
+measurements, or a guaranteed fix.
+
+Unresolved evidence before production patch:
+1. Obtain and hash the exact installed SDK 6.1 lwIP `udp.c`,
+   `ip4.c`, `pbuf.c` and relevant output path.
+2. Verify pbuf header pointer/length state after every `ERR_MEM`
+   return path; a retry can be unsafe even with reference count 1.
+3. Prove exact caller's original-reference release ordering and
+   downstream Wi-Fi TX reference lifecycle.
+4. Run finite, deterministic actual-code tests before ANY OTA.
+No devices, auth material, NVS, identity or installed firmware
+are accessed by this CI branch.
