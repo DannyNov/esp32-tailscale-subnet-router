@@ -143,3 +143,39 @@ Unresolved evidence before production patch:
 4. Run finite, deterministic actual-code tests before ANY OTA.
 No devices, auth material, NVS, identity or installed firmware
 are accessed by this CI branch.
+
+## UDP/IP prepend behavior (public lwIP comparison)
+
+The uploaded, source-attested November SPARE manager calls
+`wg_tcpip_udp_sendto(e.p,...)` for queued packets at line 543,
+and `wgopt1_udp_pbuf_output_cb` can requeue after a driver
+`ERR_MEM` at line 871. Its line 846 comment claims that
+`udp_sendto` restores the original header position on return.
+**That claim is not supported by the reviewed public
+`espressif/esp-lwip` tag `2.2.0-esp` source.** In this reference,
+`udp_sendto_if_src` calls `pbuf_add_header(p,8)`,
+`ip4_output_if_opt_src` calls `pbuf_add_header(p,20)`,
+and the ordinary return path does not roll either change back.
+`pbuf_add_header_impl` changes `payload`, `len` and
+`tot_len` in place for contiguous `PBUF_RAM`.
+
+For a 1312-byte example, one successful pair of prepends makes
+`tot_len=1340`; retry on the same pbuf can make `tot_len=1368`
+and send the prior headers as part of the UDP payload. The model
+`wg12-header-retry.c` demonstrates that cumulative-header scenario
+and checks a fresh-buffer alternative, but is NOT a build of lwIP.
+
+Important provenance limit: the publicly inspected
+`espressif/esp-lwip:2.2.0-esp` is **not attested byte-identical**
+to the exact local installed ESP-IDF 6.1 source. The archive
+supplies `ip4.c` SHA256
+`72e0d201e2ab2bf18f48a50d5bbccc19a79137488514b1ec7b3c467e6d96d677`
+but not a readable copy of its matching `udp.c` or `pbuf.c`.
+Confirm those exact files and any Espressif modifications before
+production claims.
+
+This is distinct from the reference-count assert. A shared pbuf
+can trigger the IPv4 `ref==1` assertion before IP-header prepend;
+accumulated headers are a separate possible cause of packet
+corruption/retry problems. Neither hypothesis is a proven explanation
+for the field PANIC without a controlled trace. No OTA is authorized.
