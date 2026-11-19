@@ -11,7 +11,14 @@ sub = repo / "external" / "microlink"
 output = Path(sys.argv[1])
 expected_gitlink = "17a8c9c0b9f6d7871fd1430f800383c87b99caa2"
 source = sub / "components/microlink/src/ml_wg_mgr.c"
+baseline = json.loads((Path(__file__).resolve().parent / "baseline.json").read_text(encoding="utf-8"))
 report = {
+    "deployed_spare": {
+        "firmware": baseline["version"],
+        "build": baseline["build"],
+        "expected_manager_sha256": baseline["microlink_wg_mgr_sha256"],
+        "expected_ip4_sha256": baseline["ip4_source_sha256"],
+    },
     "scope": "fork-pinned public MicroLink source, not attested SPARE 0.1.40-tlsca1",
     "installed_spare_panic_root_cause": "NOT PROVEN",
     "installed_spare_pbuf_lifecycle": "NOT PROVEN",
@@ -23,6 +30,14 @@ try:
     report["checks"]["expected public submodule gitlink"] = "PASS" if actual == expected_gitlink else "FAIL"
     data = source.read_bytes()
     report["source_sha256"] = hashlib.sha256(data).hexdigest()
+    report["deployed_spare"]["source_match"] = (
+        "MATCH" if report["source_sha256"] == baseline["microlink_wg_mgr_sha256"]
+        else "MISMATCH"
+    )
+    report["deployed_spare"]["comparison_status"] = (
+        "PASS" if report["deployed_spare"]["source_match"] == "MATCH"
+        else "NOT PROVEN"
+    )
     text = data.decode("utf-8")
     start = text.index("static err_t wg_udp_output_cb(")
     end = text.index("/* tailscale \"send both\"", start)
@@ -38,6 +53,7 @@ try:
     report["checks"].update({name: "PASS" if present else "FAIL" for name, present in predicates.items()})
     report["notes"] = [
         "Source guards assert presence/order only, not safety across asynchronous driver lifetimes.",
+        "Public gitlink and archived deployed source SHA256 are independently compared; a mismatch must not fail this source-only inventory but blocks deployed-source claims.",
         "Exact installed SPARE source and wg12_flush_cb are not contained in this pinned submodule check.",
         "No PANIC reproduction or ESP-IDF SDK matrix is claimed."
     ]
