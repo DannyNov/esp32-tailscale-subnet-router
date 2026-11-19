@@ -37,6 +37,7 @@ def main():
         "mock pbuf ownership contract (not production lwIP)": "NOT PROVEN",
         "WG12 synthetic enqueue/flush ordering": "NOT PROVEN",
         "WG12 synthetic ERR_MEM retry references": "NOT PROVEN",
+        "WG12 isolated-copy-per-attempt model": "NOT PROVEN",
         "full Host Lab 3 / pbuf / netif lifecycle": "NOT PROVEN",
         "ESP-IDF 5.5.3/y, 6.1/y and 6.1/n builds": "NOT PROVEN",
         "PANIC predicate, hardware behavior and throughput": "NOT PROVEN",
@@ -81,6 +82,11 @@ def main():
         run([*compiler, *flags, str(root / "wg12-retry-model.c"), "-o", str(retry_binary)])
         run([str(retry_binary)])
         checks["WG12 synthetic ERR_MEM retry references"] = "PASS"
+        checks["WG12 isolated-copy-per-attempt model"] = "FAIL"
+        isolated_binary = (args.output / ("wg12-copy-per-attempt" + (".exe" if os.name == "nt" else ""))).resolve()
+        run([*compiler, *flags, str(root / "wg12-copy-per-attempt.c"), "-o", str(isolated_binary)])
+        run([str(isolated_binary)])
+        checks["WG12 isolated-copy-per-attempt model"] = "PASS"
         if args.sanitize:
             checks["ASan and UBSan"] = "PASS"
     except (OSError, ValueError, subprocess.SubprocessError) as error:
