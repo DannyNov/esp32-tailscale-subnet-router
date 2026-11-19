@@ -77,3 +77,29 @@ the root cause of the PANIC.
 The public CI workflow uses the public MicroLink submodule only as an
 expected-MISMATCH negative control. Do NOT upload local firmware
 sources or private secrets into this public repository.
+
+## Uploaded exact-source verification (19 November 2026)
+
+The operator provided the exact local `ml_wg_mgr.c` separately. A read-only
+SHA256 comparison in the analysis chat matched the archived manifest
+`686e44d1f0f305de8250563aa2ef5630144f4b714b1191d1a7736d7d3fc46ba8`
+(124422 bytes). **This is an external source attestation, not a claim that
+GitHub CI contains the source or has performed a flash readback.** No uploaded
+source or private firmware data was committed.
+
+The attested file has `wg12_enqueue` retaining its input `pbuf`
+(line 497); `wg12_flush_cb` sends the same queued pointer from the TCPIP
+thread (line 543), with release at line 568, and re-enqueues on
+`ERR_MEM` (lines 550–562). The borrowed-TX entry points can enqueue
+from backlog (line 865) or after a driver `ERR_MEM` (line 871). The
+synchronous rendezvous wrapper lives at lines 307–347. These source facts
+support a possible shared-reference interleaving; they **do not** prove that
+the deployed system reached it during its 18 November PANIC.
+
+The `wg12-copy-per-attempt.c` host test explores an alternative design:
+the queue owns a byte copy, each transmission uses its own independently
+owned pbuf, and retries never reuse a potentially shared outgoing pbuf.
+This is an illustrative synthetic model, NOT an applied firmware patch.
+It deliberately reports no improvement in hardware throughput or proof
+of panic elimination. Further testing with exact lwIP/Wi-Fi interfaces
+and error-contract evidence is needed before production modification.
