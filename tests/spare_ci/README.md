@@ -28,3 +28,20 @@ observed panic at `ip4.c:929`. It does not reproduce the device's 13-frame
 backtrace, prove queue/netif lifetimes in production, or qualify OTA.
 The CI report explicitly distinguishes this mock PASS from production
 pbuf/netif lifecycle, which remains NOT PROVEN.
+
+## WG12 queue overlap hypothesis (archived October source)
+
+The `wg12-interleaving.c` test models the ownership transition in an
+**archived October** `ml_wg_mgr.c`: `wg12_enqueue` retains the original
+`pbuf` and `wg12_flush_cb` submits it to `udp_sendto`. It exercises
+(1) normal release-before-flush, (2) flush-before-caller-release, and
+(3) an independent extra reference. Scenarios (2) and (3) deliberately
+detect a nonexclusive buffer (`ref == 2`), without triggering a host
+abort. Passing means the model identifies the hazardous ordering; it
+does **not** mean that the deployed `0.1.40-tlsca1` has this race or
+that the historical `ip4.c:929` assertion is caused by it.
+
+The installed November 17 source and its exact 13-frame trace must be
+compared separately before modifying production code. The earlier
+`source_audit.py` examines the fork's pinned public MicroLink submodule,
+which does not have the same WG12 queue implementation.
