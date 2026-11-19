@@ -34,6 +34,7 @@ def main():
         "queue ownership and FIFO (240 epochs)": "NOT PROVEN",
         "HTTPS response and cleanup (six mocked cases per variant)": "NOT PROVEN",
         "ASan and UBSan": "NOT PROVEN",
+        "mock pbuf ownership contract (not production lwIP)": "NOT PROVEN",
         "full Host Lab 3 / pbuf / netif lifecycle": "NOT PROVEN",
         "ESP-IDF 5.5.3/y, 6.1/y and 6.1/n builds": "NOT PROVEN",
         "PANIC predicate, hardware behavior and throughput": "NOT PROVEN",
@@ -63,6 +64,11 @@ def main():
                 run([*compiler, *flags, *defines, str(root / source), "-o", str(binary)])
                 run([str(binary)])
             checks[check] = "PASS"
+        checks["mock pbuf ownership contract (not production lwIP)"] = "FAIL"
+        binary = (args.output / ("pbuf-lifecycle" + (".exe" if os.name == "nt" else ""))).resolve()
+        run([*compiler, *flags, str(root / "pbuf-lifecycle.c"), "-o", str(binary)])
+        run([str(binary)])
+        checks["mock pbuf ownership contract (not production lwIP)"] = "PASS"
         if args.sanitize:
             checks["ASan and UBSan"] = "PASS"
     except (OSError, ValueError, subprocess.SubprocessError) as error:
