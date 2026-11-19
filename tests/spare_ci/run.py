@@ -35,6 +35,7 @@ def main():
         "HTTPS response and cleanup (six mocked cases per variant)": "NOT PROVEN",
         "ASan and UBSan": "NOT PROVEN",
         "mock pbuf ownership contract (not production lwIP)": "NOT PROVEN",
+        "WG12 synthetic enqueue/flush ordering": "NOT PROVEN",
         "full Host Lab 3 / pbuf / netif lifecycle": "NOT PROVEN",
         "ESP-IDF 5.5.3/y, 6.1/y and 6.1/n builds": "NOT PROVEN",
         "PANIC predicate, hardware behavior and throughput": "NOT PROVEN",
@@ -69,6 +70,11 @@ def main():
         run([*compiler, *flags, str(root / "pbuf-lifecycle.c"), "-o", str(binary)])
         run([str(binary)])
         checks["mock pbuf ownership contract (not production lwIP)"] = "PASS"
+        checks["WG12 synthetic enqueue/flush ordering"] = "FAIL"
+        interleaving_binary = (args.output / ("wg12-interleaving" + (".exe" if os.name == "nt" else ""))).resolve()
+        run([*compiler, *flags, str(root / "wg12-interleaving.c"), "-o", str(interleaving_binary)])
+        run([str(interleaving_binary)])
+        checks["WG12 synthetic enqueue/flush ordering"] = "PASS"
         if args.sanitize:
             checks["ASan and UBSan"] = "PASS"
     except (OSError, ValueError, subprocess.SubprocessError) as error:
