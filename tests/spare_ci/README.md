@@ -45,3 +45,20 @@ The installed November 17 source and its exact 13-frame trace must be
 compared separately before modifying production code. The earlier
 `source_audit.py` examines the fork's pinned public MicroLink submodule,
 which does not have the same WG12 queue implementation.
+
+## ERR_MEM retry reference model
+
+`wg12-retry-model.c` models the historical WG12 behavior when a queued
+pbuf is sent and `udp_sendto` returns `ERR_MEM`. It checks both a
+retry retaining exactly one queue reference, and a hypothetical failure
+path where another component still retains a pbuf reference. The second
+scenario deliberately detects the violation of the exclusive-reference
+contract; it does not imply that ESP-IDF's actual driver retains the
+buffer on `ERR_MEM`. A separate-copy case models one possible
+ownership isolation concept but is **not** a production fix.
+
+The exact deployed `0.1.40-tlsca1` source has not been retrieved
+from the user's local `D:\\ChatGPT` archive into this public CI. Do not
+promote these historical-source models to a root-cause finding until
+provenance and the deployed path are verified. No device secret, NVS
+state or private identity should be uploaded to the public repository.
