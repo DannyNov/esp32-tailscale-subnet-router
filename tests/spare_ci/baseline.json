@@ -18,7 +18,8 @@
     "queue-main.inc": "44f1efc4bfd6c5c6f0dbf03f16ad847794ac52b21bcfa8d4896557c3e9c32145",
     "https-before.c": "2e59474224cb30e7617d64b10482e5d349ae7bf16fd3f4b5a7880ef75bcdd43b",
     "https-after.c": "5d11231f4d8390991992bc9d6238785a8f1bb8c6faf9afcdc9bacfc9f0b8ac9b",
-    "win-shim/pthread.h": "b419fc50d78b08c9ae9fdc462cdff80f434e45018c4c6d6ec99bdf1d26aacb34"
+    "win-shim/pthread.h": "b419fc50d78b08c9ae9fdc462cdff80f434e45018c4c6d6ec99bdf1d26aacb34",
+    "pbuf-lifecycle.c": "c3eb51d16d96ae3e1760147b130b7ea0b8f543a931ffea576e9404282baaa168"
   },
   "microlink_wg_mgr_sha256": "686e44d1f0f305de8250563aa2ef5630144f4b714b1191d1a7736d7d3fc46ba8",
   "archive_build_matrix": [
