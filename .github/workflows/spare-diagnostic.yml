@@ -30,6 +30,17 @@ jobs:
         run: python3 tests/spare_ci/run.py --cc clang --sanitize "$RUNNER_TEMP/spare-result"
       - name: Audit pinned MicroLink source (not deployed SPARE)
         run: python3 tests/spare_ci/source_audit.py "$RUNNER_TEMP/spare-result/source-audit.json"
+      - name: Negative-control archive SHA check (public source is different)
+        run: |
+          set +e
+          python3 tests/spare_ci/verify_local_source.py external/microlink/components/microlink/src/ml_wg_mgr.c
+          status=$?
+          set -e
+          if [ "$status" -ne 2 ]; then
+            echo "FAIL: expected an archived-SPARE SHA mismatch (exit 2), received $status"
+            exit 1
+          fi
+          echo "PASS: verifier rejects non-matching public MicroLink source"
       - name: Add job summary
         if: always()
         run: |
