@@ -62,3 +62,18 @@ from the user's local `D:\\ChatGPT` archive into this public CI. Do not
 promote these historical-source models to a root-cause finding until
 provenance and the deployed path are verified. No device secret, NVS
 state or private identity should be uploaded to the public repository.
+
+## Exact local source verification (no upload)
+
+Given a trusted local copy of November 17 SPARE `0.1.40-tlsca1`
+`ml_wg_mgr.c` under `D:\\ChatGPT`, use
+`python tests/spare_ci/verify_local_source.py PATH_TO_ML_WG_MGR_C`.
+The helper reads and hashes the source only; it does not publish source,
+NVS, tokens, identity or firmware. Exit code 0 means the local file
+matches the archived manifest SHA256, 2 means mismatch, 3 means blocked
+or inaccessible. Even a SHA match does not prove a flash readback or
+the root cause of the PANIC.
+
+The public CI workflow uses the public MicroLink submodule only as an
+expected-MISMATCH negative control. Do NOT upload local firmware
+sources or private secrets into this public repository.
